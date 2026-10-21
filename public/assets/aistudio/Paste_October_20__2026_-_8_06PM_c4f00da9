@@ -1,0 +1,997 @@
+Build a native Android app called Craft Stash.
+
+Treat this as a production-oriented, maintainable Android project—not a web app wrapped in an Android shell, not a static UI prototype, and not an application powered by mock data.
+
+Implement in phases. Preserve working functionality between phases. If the entire specification cannot be implemented reliably in one pass, first deliver a working, tested Phase 1 and clearly report what remains. Do not create nonfunctional controls that appear to work.
+
+==================================================
+1. PRODUCT PURPOSE AND BOUNDARIES
+==================================================
+
+Craft Stash is a personal craft-supply inventory and project companion for hobby crafters.
+
+Its central questions are:
+- What do I have?
+- Where is it?
+- What could I make with it?
+- Which of my saved projects could use these supplies?
+
+The experience should feel like browsing and rediscovering a craft room, not maintaining business inventory.
+
+Do not add:
+- Pricing, valuation, profit, or sales tracking.
+- Supplier or purchase-order management.
+- Business inventory dashboards.
+- Advertising, affiliate links, analytics, or tracking.
+- Accounts, subscriptions, or required cloud services.
+- A social feed.
+- Generative AI or a runtime LLM integration.
+
+The inspiration feature must combine:
+A. Matching supplies to the user’s saved projects, as the primary function.
+B. Locally generated inspiration prompts and optional external searches, as an alternative.
+
+Using AI Studio to develop this app does not mean the app itself needs AI.
+
+==================================================
+2. PLATFORM, ARCHITECTURE, AND F-DROID PRIORITY
+==================================================
+
+Create a native Android project using:
+- Kotlin.
+- Jetpack Compose and Material 3.
+- A local relational database, preferably Room.
+- Coroutines and reactive observable state.
+- A clear separation between UI, domain logic, persistence, and optional external services.
+- Dependency injection appropriate to the project’s size; avoid unnecessary frameworks.
+
+Use stable, compatible toolchain and dependency versions. Pin versions; do not use dynamic versions or unnecessary preview tooling.
+
+Use a unique development application ID such as:
+io.github.amywatkins.craftstash
+
+Document that the owner must confirm the final application ID before first public release, because it should not casually change later. Do not assume this namespace or a repository URL has already been registered or created.
+
+F-Droid compatibility is an architectural requirement:
+- All app code and required dependencies must use suitable FOSS licenses.
+- Verify direct and transitive dependencies.
+- Do not include Google Play Services, Firebase, Crashlytics, Google Analytics, proprietary advertising SDKs, or proprietary barcode libraries.
+- Do not assume a Google-branded SDK is acceptable merely because it is easy to integrate.
+- Use a FOSS barcode-decoding implementation, such as an appropriate ZXing implementation, only after verifying its current license, maintenance, compatibility, and transitive dependencies.
+- Do not add ML Kit to the F-Droid build.
+- No proprietary IDE, hosted service, private package repository, or developer account may be necessary to build the application.
+- The project must build using documented command-line Gradle tasks and an appropriate OpenJDK toolchain.
+- Do not commit signing keys, credentials, private configuration, or unrelated precompiled binaries.
+- Do not download executable code at runtime.
+
+Prefer one clean FOSS implementation over unnecessary build flavors.
+If a feature genuinely cannot meet these requirements:
+1. Explain the incompatibility.
+2. Keep the core app fully functional without it.
+3. Isolate it from the F-Droid build.
+4. Document any separate flavor and its dependency differences.
+Do not silently introduce non-FOSS code.
+
+Audit external-service recommendations and optional product-lookup integrations for possible F-Droid anti-features. Do not claim that external-browser links, optional integrations, or user-configurable settings automatically avoid anti-feature classification.
+
+==================================================
+3. OFFLINE-FIRST BEHAVIOR AND PRIVACY
+==================================================
+
+The following must work without internet:
+- Creating and editing supplies.
+- Taking/importing and viewing locally stored photos.
+- Searching, filtering, sorting, and browsing inventory.
+- Storage-location management.
+- Creating and editing projects.
+- Linking supplies to projects.
+- Reservations and consumption records.
+- Saved-project matching.
+- Locally generated inspiration suggestions and search phrases.
+- Backup, export, and restore.
+- Barcode reading after installation, without downloading a proprietary scanning model.
+
+Only optional product lookup and opening external websites need connectivity.
+
+No mandatory account.
+No background uploads.
+No telemetry.
+No remote image dependency for user-owned photos.
+No silent network requests.
+
+Request permissions only when needed.
+Use Android’s system photo/document selection facilities where practical.
+Do not request broad storage access unnecessarily.
+Request camera permission only for camera-based functions.
+
+Explain in the privacy documentation:
+- What stays on the device.
+- What data is sent during an optional product lookup.
+- That opening an external search sends the selected query to the chosen site/browser.
+- That exported backups may contain personal photos, notes, and storage locations.
+
+Provide a setting controlling any OS-managed cloud backup behavior. Do not promise that data never leaves the device while silently allowing automatic cloud backup of the database and photos.
+
+==================================================
+4. NAVIGATION AND DESIGN
+==================================================
+
+Suggested primary destinations:
+- Stash.
+- Projects.
+- Ideas.
+
+Provide easy access to:
+- Add supply.
+- Storage locations.
+- Saved filters.
+- Settings.
+- Backup and restore.
+
+Design style:
+- Warm, approachable, visually calm, craft-oriented.
+- Photo-forward but information-rich when needed.
+- Suitable for a large mixed-craft collection.
+- Light, dark, and system themes.
+- Accessible contrast and touch targets.
+- Support system font scaling and screen-reader labels.
+- Never communicate status through color alone.
+
+Avoid an overloaded dashboard.
+Make the core actions easy to reach.
+
+Offer an optional sample-data preview, clearly separated from real user data.
+Do not seed demo inventory into a real collection without consent.
+
+==================================================
+5. ADDING SUPPLIES
+==================================================
+
+Support these entry paths:
+
+A. QUICK ADD
+- Name required.
+- Photo optional.
+- Category optional.
+- Storage location optional.
+- Save immediately.
+- Everything else can be completed later.
+
+B. DETAILED ADD
+- All shared and category-specific fields.
+
+C. SCAN BARCODE
+- Read UPC/EAN and other deliberately supported formats.
+- Search the local collection first.
+- If found, offer:
+  - View existing item.
+  - Add quantity to an appropriate existing batch.
+  - Add a separate batch/piece.
+  - Create a distinct record if the user confirms.
+- If not found, optionally attempt online lookup when an approved provider has been configured.
+- If lookup fails, preserve the barcode and open manual entry.
+- Never block saving because lookup is unavailable.
+
+D. DUPLICATE ITEM
+- Copy relevant product attributes.
+- Let the user change color, dimensions, quantity, batch, and location.
+- Do not accidentally duplicate reservations, consumption history, or project allocations.
+
+E. CAPTURE NOW, ORGANIZE LATER
+- Allow a user to capture multiple photos into a draft inbox.
+- Let the user explicitly decide which photos belong to each supply.
+- Do not assume every photo is a separate item.
+- Drafts may remain incomplete.
+- Before moving a draft into the main inventory, require a name.
+
+Optional completeness cues:
+- Needs name.
+- Needs category.
+- Needs location.
+- Organized.
+
+These are helpful cues, not overdue tasks or failure states.
+
+==================================================
+6. INVENTORY MODEL
+==================================================
+
+Separate:
+- Supply/item identity.
+- Physical batches or pieces.
+- Project requirements.
+- Allocations/reservations.
+- Confirmed usage.
+
+Shared supply fields:
+- Stable internal ID.
+- Name.
+- One or more photos.
+- Supply category.
+- One or more craft types.
+- Material or material blend.
+- One or more color families.
+- Optional manufacturer color name/code.
+- Appearance: solid, patterned, variegated, metallic, translucent, etc.
+- Brand/product line.
+- Optional barcode stored as text, preserving leading zeros and format.
+- Notes.
+- Tags.
+- Created/updated dates.
+- Optional favorite flag.
+
+Keep supply category distinct from craft type:
+Example:
+- Category: fabric.
+- Material: cotton.
+- Craft types: quilting, sewing, embroidery.
+
+Support user-created categories and tags.
+Supply sensible editable defaults.
+Do not force a supply into only one craft type.
+
+Physical batches/pieces may contain:
+- Quantity value.
+- Unit.
+- Tracking precision.
+- Measurements.
+- Storage location.
+- Dye lot or other batch identifier.
+- Opened/sealed condition when relevant.
+- Notes.
+- Optional photo.
+- Active/depleted status.
+
+Use stable IDs and real relationships rather than matching records by display names.
+
+==================================================
+7. QUANTITIES AND MEASUREMENTS
+==================================================
+
+Support three tracking modes:
+1. Exact.
+2. Approximate.
+3. Presence only.
+
+Examples:
+- Exactly 24 buttons.
+- Approximately 20 beads.
+- About half a bottle.
+- A small bag of scraps.
+- I own this, quantity not tracked.
+
+Unknown is not zero.
+Do not invent numeric quantities from descriptive amounts.
+
+Store measurement value, unit, and meaning separately.
+Avoid ambiguous “Size: 5” fields.
+
+Support suitable units for:
+- Count.
+- Length.
+- Mass.
+- Volume.
+- Width/height/thickness/diameter.
+
+Use safe decimal representations and defined conversion rules.
+Convert only within compatible dimensions.
+Do not convert mass to length or volume without explicit, valid item-specific information.
+
+Support metric and imperial display preferences.
+Do not alter the meaning of stored measurements when preferences change.
+
+Do not automatically combine:
+- Different dye lots.
+- Different storage locations.
+- Incompatible units.
+- Distinct fabric pieces.
+- Opened and unopened containers when the user tracks them separately.
+
+Fabric example:
+One supply may have:
+- Piece A: 24 × 36 inches.
+- Piece B: 8 × 10 inches.
+
+Do not claim these are equivalent to a single continuous piece with the same total area.
+
+==================================================
+8. CATEGORY-SPECIFIC TEMPLATES
+==================================================
+
+Show relevant fields progressively; do not display every possible field on every item.
+
+Suggested templates:
+
+YARN
+- Fiber composition.
+- Yarn weight category.
+- Colorway.
+- Dye lot.
+- Length and/or mass.
+- Full skeins versus remnants.
+- Optional label photo.
+
+FABRIC
+- Fiber.
+- Width and length per piece.
+- Stretch.
+- Print/pattern.
+- Optional weight/type.
+
+PAINT AND LIQUID MEDIA
+- Medium/type.
+- Shade/code.
+- Container volume.
+- Approximate remaining amount.
+- Opened/sealed status.
+
+BEADS AND JEWELRY SUPPLIES
+- Material.
+- Shape.
+- Diameter.
+- Hole size.
+- Count or approximate amount.
+
+PAPER AND VINYL
+- Sheet/roll format.
+- Dimensions.
+- Finish.
+- Adhesive/type.
+- Color.
+
+TOOLS
+- Tool type.
+- Size.
+- Compatible crafts.
+- Location.
+- Reusable; not consumed.
+
+RIBBON, THREAD, CORD, AND TRIM
+- Material.
+- Width/thickness.
+- Length.
+- Color.
+- Spool/remnant status.
+
+Allow optional custom fields with types:
+- Text.
+- Number.
+- Measurement.
+- Choice.
+- Boolean.
+
+Keep core filterable fields standardized rather than storing everything in arbitrary text.
+
+==================================================
+9. BROWSING, SEARCH, FILTERS, AND LOCATIONS
+==================================================
+
+Views:
+- Photo grid for visual browsing.
+- Detail cards.
+- Compact list.
+- Grouping by category, craft, color, or storage location.
+
+Remember the user’s preferred view and sort.
+
+Search across:
+- Name.
+- Brand.
+- Tags.
+- Material.
+- Color name/code.
+- Barcode.
+- Notes.
+- Storage location.
+
+Filters:
+- Supply category.
+- Craft type.
+- Material.
+- Color family.
+- Appearance.
+- Location.
+- Available/depleted.
+- Exact/approximate/unknown quantity.
+- Assigned/unassigned to projects.
+- Relevant measurement ranges.
+- Favorites.
+
+Make filters combinable.
+Clearly show active filters and provide “Clear all.”
+Support named saved filters.
+
+Define whether a multi-select filter means “any selected” or “all selected,” and make that clear to users.
+
+When a record has multiple batches, measurement and availability filters must refer to an eligible batch, not accidentally combine attributes from unrelated batches.
+
+Storage locations:
+- Editable nested hierarchy.
+- Example: Craft room → Rolling cart → Bottom drawer.
+- Optional location photo and notes.
+- Show location prominently on supply detail and search results.
+- Moving a batch must not duplicate or consume it.
+
+Later optional feature:
+- Generate a local QR code for a storage location.
+- Scanning opens that location’s contents.
+- Use internal IDs, not embedded personal notes.
+- Handle codes from a different or missing database gracefully.
+
+==================================================
+10. PROJECTS
+==================================================
+
+Support:
+- Idea.
+- Planned.
+- In progress.
+- Paused.
+- Completed.
+- Archived.
+
+Allow lightweight projects:
+- Title.
+- Optional link.
+- Optional notes.
+No structured material list is required to save.
+
+Optional project fields:
+- Cover photo.
+- Craft type.
+- Source URL and source name.
+- Notes.
+- Progress photos.
+- Finished measurements.
+- Materials needed.
+- Tools needed.
+- Linked stash supplies.
+- Completion date.
+
+Preserve source links as references.
+Do not scrape complete patterns, bypass logins/paywalls, or import copyrighted photos automatically.
+Users may attach their own legally obtained files and images.
+Do not imply that a link grants redistribution rights.
+
+Consider a later Android share-target workflow for saving a shared URL as a project draft. Keep this separate from essential project creation.
+
+==================================================
+11. PROJECT REQUIREMENTS, MATCHING, AND ALLOCATION
+==================================================
+
+A project requirement is not the same object as a stash item.
+
+Example:
+Requirement:
+“200 g of worsted-weight cotton yarn”
+
+Selected stash allocation:
+“Blue cotton yarn, batch A”
+
+Match status:
+“User-confirmed substitute”
+
+Requirement fields may include:
+- Description.
+- Category.
+- Material.
+- Color preference.
+- Required quantity/unit.
+- Required dimensions.
+- Required attributes.
+- Whether a single continuous piece is required.
+- Whether multiple batches may be combined.
+- Whether mixing dye lots is acceptable.
+- Consumable versus reusable tool.
+- Optional/required.
+
+Users must be able to approve, reject, replace, or manually link a possible match.
+
+Material states:
+- Have enough.
+- Have some.
+- Missing.
+- Quantity unknown.
+- Possible substitute; review needed.
+
+Do not label a project “Ready to make” unless all required structured requirements have confirmed coverage.
+For incomplete material lists, show:
+“Coverage applies to the requirements you entered.”
+
+Never infer that matching category names alone proves suitability.
+
+==================================================
+12. RESERVATIONS AND CONSUMPTION
+==================================================
+
+Distinguish:
+- On hand.
+- Reserved.
+- Available.
+
+Calculate numeric availability only when compatible, sufficiently precise quantities exist.
+For approximate or unknown quantities, use honest labels instead of false precision.
+
+Reservations:
+- Are optional.
+- Do not physically consume inventory.
+- Warn when the same quantity is overcommitted.
+- Do not silently create negative stock.
+- Show which projects reserve a batch.
+
+Reusable tools:
+- Can be linked to multiple projects.
+- Are not consumed.
+- May show a nonblocking “also used by another project” note if useful.
+
+Completing a project:
+- Ask whether to record actual usage.
+- Let users change the amount used.
+- Preserve leftovers.
+- Allow skipping consumption updates.
+- Do not automatically consume planned amounts.
+
+Use atomic database transactions for allocation and usage updates.
+Keep a minimal usage history so mistakes can be reversed reliably.
+Undo must restore related quantities consistently.
+
+Archiving or deleting a project must explicitly handle its reservations without deleting the physical supplies.
+
+==================================================
+13. IDEAS: SAVED-PROJECT MATCHING FIRST
+==================================================
+
+The Ideas screen must prioritize the user’s own projects.
+
+Entry points:
+- Open Ideas from navigation.
+- Select “Get ideas” on one supply.
+- Select several supplies and choose “Get ideas.”
+
+Allow:
+- Use any selected supply.
+- Try to use all selected supplies.
+
+Do not confuse these modes.
+
+Primary sections:
+- Saved projects using these supplies.
+- Projects with confirmed material coverage.
+- Projects with only one or a few known missing requirements.
+- Possible substitutions to review.
+- Projects with uncertain quantities.
+
+Prefer active idea/planned/paused projects.
+Let users include completed or archived projects explicitly.
+
+Matching must run locally and deterministically.
+No LLM required.
+
+Rank using transparent criteria such as:
+- Confirmed links to selected supplies.
+- Satisfaction of entered requirements.
+- Number of known missing requirements.
+- Unknown requirements/quantities.
+- User-confirmed substitutions.
+
+Do not present arbitrary confidence percentages.
+Explain why a project appears:
+- “Uses your cotton yarn.”
+- “3 of 4 entered materials confirmed.”
+- “Button quantity not tracked.”
+- “Possible fabric match; dimensions need review.”
+
+A single batch must not be counted twice toward separate requirements unless sufficient available quantity exists.
+Account for reservations and compatibility rules.
+
+Free-text-only requirements should not produce unjustified exact matches.
+Allow “possible match” suggestions and user confirmation.
+
+If there are no saved-project matches, say so clearly and offer inspiration alternatives.
+Do not manufacture saved projects.
+
+==================================================
+14. IDEAS: LOCAL INSPIRATION AND WEB SEARCHES
+==================================================
+
+Secondary inspiration functionality must work without generative AI.
+
+Use a small, editable, locally bundled set of rules connecting supply attributes to broad project categories.
+
+Examples:
+- Fabric scraps → patchwork, appliqué, small pouches.
+- Ribbon remnants → bookmarks, decorative tassels, gift embellishments.
+- Beads and suitable findings → charms, stitch markers, jewelry.
+- Yarn remnants → small crochet/knit accessories, colorwork, decorative projects.
+
+These are idea starters, not validated patterns.
+Do not claim selected quantities are sufficient.
+
+Avoid safety-sensitive project recommendations such as:
+- Food-contact items from unspecified materials.
+- Heat-resistant items from unverified fibers/materials.
+- Baby or pet products involving unassessed choking, entanglement, or toxicity risks.
+
+Offer filters/constraints:
+- Craft type.
+- Beginner-friendly.
+- Small project.
+- Scrap/remnant friendly.
+- No sewing machine.
+- Approximate time preference.
+- Intended use: decorative, gift, accessory, home organization.
+- Prefer using selected supplies.
+
+If a constraint cannot be established from local information, label it as a search preference rather than a verified property.
+
+Generate editable search phrases locally.
+Examples:
+- “small crochet projects cotton yarn leftovers”
+- “beginner hand sewing projects fabric scraps”
+- “ribbon remnant bookmark ideas”
+- “beaded stitch marker tutorial”
+- “cross stitch small motifs leftover floss”
+
+Do not add exact quantities or characteristics unless the selected records support them.
+
+Show the full query before opening an external destination.
+Allow editing and copying.
+Do not silently include private notes, locations, or the entire inventory.
+
+==================================================
+15. INSPIRATION SOURCE DIRECTORY
+==================================================
+
+Include an optional, editable directory of inspiration destinations.
+
+Requested starter suggestions:
+- Pinterest: broad visual inspiration.
+- Ravelry: knitting and crochet patterns, yarn-related project exploration.
+- DMC: embroidery and cross-stitch pattern browsing.
+- Instructables: broad DIY and craft tutorials.
+- Generic web search: any craft category.
+
+Do not imply that every project on these sites is free, beginner-friendly, available without an account, or validated by Craft Stash.
+
+Explain:
+- External sites have their own terms and privacy policies.
+- Some content may require an account or payment.
+- Craft Stash is not affiliated with these services.
+- Supplies and instructions must be checked on the original source.
+
+Use text names and original app artwork.
+Do not copy site logos, project thumbnails, or pattern content.
+
+Each directory entry should have:
+- Name.
+- Base URL.
+- Craft tags.
+- Brief factual description.
+- Optional verified search template.
+- Optional account/payment note.
+- Enabled/disabled status.
+
+Let users:
+- Add their own destinations.
+- Edit or remove suggestions.
+- Disable all bundled suggestions.
+- Restore defaults intentionally.
+
+Do not guess deep-link/search URL formats.
+If a site’s search template is not verified:
+- Copy the generated query.
+- Open the site’s verified landing page.
+- Explain that the user can paste the query.
+
+Open links in the user’s external browser.
+No embedded web scraping.
+No login integrations.
+No requirement to install Pinterest, Ravelry-related apps, or any other proprietary app.
+Do not hardcode a preferred browser or search provider.
+
+Before release, review whether recommending named proprietary services requires F-Droid anti-feature disclosure.
+External-browser use is not proof of exemption.
+
+Keep source-directory configuration separate from matching logic so that source suggestions can be adjusted without weakening offline functionality.
+
+If a stricter F-Droid configuration is needed, document an honest alternative using generic editable search prompts and user-added destinations.
+Do not silently remove requested suggestions or claim approval.
+
+==================================================
+16. OPTIONAL BARCODE PRODUCT LOOKUP
+==================================================
+
+Separate barcode decoding from network lookup.
+
+Create a provider interface so no single catalog is structurally required.
+
+Do not ship a functioning integration until:
+- API documentation is verified.
+- Terms permit the intended app use.
+- Data/image storage rights are understood.
+- Rate limits and credentials are handled appropriately.
+- F-Droid service/anti-feature implications are documented.
+
+A candidate provider may be evaluated, but no provider coverage should be assumed.
+
+Required behavior:
+- Lookup only after an explicit user action or clearly enabled setting.
+- Explain which identifier is sent.
+- Preserve manual entry.
+- Show an editable result preview.
+- Never overwrite user edits silently.
+- Store provenance for imported fields where practical.
+- Cache data only where terms permit.
+- Download and retain images only where permitted.
+- Do not treat an image URL as permission to redistribute its contents.
+- Handle no result, multiple results, bad images, timeouts, rate limits, and offline state.
+- Never advertise “scan any craft supply.”
+
+No shared secret embedded in the APK.
+No developer-funded backend assumed.
+Do not send custom provider credentials to an untrusted or arbitrary endpoint.
+
+If no approved provider is available, ship useful local scanning and manual entry. Document online lookup as deferred rather than presenting a fake feature.
+
+==================================================
+17. PHOTOS, FILES, AND DATA OWNERSHIP
+==================================================
+
+Copy selected photos into app-managed storage when the user chooses to keep them.
+Do not depend on temporary picker URIs or remote links for permanent access.
+
+Support:
+- Multiple photos per supply.
+- Cover-photo selection.
+- Project progress photos.
+- Sensible image sizing and thumbnails.
+- Full-screen viewing.
+- Photo deletion with safe cleanup.
+
+Do not accidentally delete shared files or unrelated media.
+Manage orphaned media carefully.
+Keep original files unchanged.
+
+User attachments must not become bundled public app assets.
+Do not include personal test photos, private notes, or user backups in the source repository.
+
+==================================================
+18. BACKUP, EXPORT, AND RESTORE
+==================================================
+
+Implement early:
+A. Complete portable backup:
+- Versioned structured data, such as JSON.
+- Locally stored photos and supported attachments.
+- Stable IDs and relationships.
+- Units and quantity precision.
+- Projects, requirements, allocations, and usage history.
+- Storage locations.
+- Saved filters and relevant settings.
+- No credentials or secrets.
+
+B. CSV inventory export:
+- Clearly documented columns.
+- Readable quantities and units.
+- Stable IDs where useful.
+- Appropriate handling of multiple batches.
+- Explain that CSV is not a complete backup.
+
+Use Android’s document framework for user-chosen files.
+
+Initial full restore may use a replacement workflow rather than unreliable merging:
+- Validate archive and schema before changing live data.
+- Preview counts and warnings.
+- Offer a safety backup.
+- Require explicit confirmation.
+- Restore transactionally where possible.
+- Keep the existing collection intact if validation fails.
+
+Protect against unsafe archive paths, excessive archive sizes, and malformed records.
+Handle missing photos and unsupported future backup versions gracefully.
+
+Do not label an unencrypted archive as secure.
+Warn that backups can contain personal data.
+
+==================================================
+19. RELIABILITY AND EDGE CASES
+==================================================
+
+Handle:
+- Unknown quantities.
+- Multiple units and incompatible units.
+- Empty collections.
+- Missing photos.
+- Duplicate barcodes.
+- Multiple batches with one barcode.
+- Different dye lots.
+- Fabric pieces that cannot be combined.
+- Incomplete project requirements.
+- Reservations exceeding availability.
+- Deleting or archiving linked records.
+- Offline and lookup failure states.
+- Rotation, process death, and reopening the app.
+- Permission denial.
+- Large collections.
+- Interrupted photo import or restore.
+
+Use database migrations.
+Never use destructive migration fallback in production.
+Preserve meaningful user data across updates.
+
+Confirm destructive actions and provide undo where feasible.
+Use clear messages rather than silent failure.
+
+==================================================
+20. TESTING AND ACCEPTANCE CRITERIA
+==================================================
+
+Write automated tests for:
+- Quantity conversions and incompatible-unit rejection.
+- Unknown versus zero.
+- Exact versus approximate tracking.
+- Reservation/availability calculations.
+- Allocation without double counting.
+- Reusable tools.
+- Consumption and reversal.
+- Project matching explanations.
+- Single-piece fabric constraints.
+- Batch/dye-lot constraints.
+- Search/filter behavior.
+- Database migrations.
+- Backup/restore integrity.
+- Barcode values preserving leading zeros.
+- Local query generation excluding private fields.
+
+Provide device/emulator test instructions.
+
+Minimum end-to-end acceptance test:
+1. Create a supply with a photo.
+2. Add two distinct batches.
+3. Close and reopen the app.
+4. Confirm data and photos remain.
+5. Create a project and its requirements.
+6. Link a batch and reserve a quantity.
+7. Confirm available quantity updates correctly.
+8. Find the project through Get ideas.
+9. Generate and edit an inspiration search phrase.
+10. Export a complete backup.
+11. Restore into a clean test collection.
+12. Verify photos, links, quantities, and reservations.
+13. Repeat core browsing/project actions in airplane mode.
+
+Do not claim tests passed unless actually executed.
+Report what was tested, what could not be tested, and remaining risks.
+
+==================================================
+21. OPEN-SOURCE AND F-DROID RELEASE PREPARATION
+==================================================
+
+Use Apache-2.0 as the proposed license for original app code and include its complete license text.
+Audit dependency compatibility.
+Preserve required third-party notices and licenses.
+Clearly document any differently licensed components or assets.
+
+Create:
+- README with purpose, features, limitations, and screenshots instructions.
+- BUILDING.md with command-line build requirements and exact tasks.
+- CONTRIBUTING.md.
+- PRIVACY.md.
+- THIRD_PARTY_NOTICES or equivalent.
+- Dependency/license inventory.
+- F-Droid readiness checklist.
+- Release checklist.
+- Backup-format documentation.
+- Known-limitations document.
+
+The source repository must eventually be public and contain real, current source code.
+Do not claim a public repository exists unless it has actually been created by the owner.
+
+Prepare upstream metadata:
+fastlane/metadata/android/en-US/short_description.txt
+fastlane/metadata/android/en-US/full_description.txt
+fastlane/metadata/android/en-US/images/icon.png
+fastlane/metadata/android/en-US/images/phoneScreenshots/
+fastlane/metadata/android/en-US/changelogs/<versionCode>.txt
+
+Requirements:
+- Short description under 80 characters, no trailing dot.
+- Changelog at most 500 characters.
+- Accurate descriptions of implemented features only.
+- Original or appropriately licensed icon/artwork.
+- Screenshots must show real implemented screens.
+- Do not fabricate screenshot files or claim placeholders are release-ready.
+
+Use explicit versionName and versionCode values in the conventional Gradle Android configuration.
+Do not calculate release versions dynamically from dates, Git commands, or environment state.
+Document matching Git release tags, such as v0.1.0.
+
+Prepare a draft F-Droid build-metadata template for the final application ID.
+Clearly distinguish:
+- Metadata stored in the app’s own repository.
+- The separate fdroiddata submission/build metadata.
+
+Do not invent repository URLs, commit hashes, signing fingerprints, author email addresses, or approval status.
+Mark unresolved submission values as TODO in documentation, not as fake working configuration.
+
+Document validation with fdroid tools, including lint and a test build, once the final repository and metadata are available.
+Do not claim successful F-Droid validation without running it.
+
+Aim for reproducible builds:
+- Deterministic inputs.
+- Pinned toolchain/dependencies.
+- No timestamps or machine-specific paths embedded unnecessarily.
+- Document signing and distribution-channel considerations.
+- Do not promise that different signing keys are interchangeable.
+- Keep private signing material outside the repository.
+
+Maintain an explicit external-services/anti-features review covering:
+- Suggested inspiration services.
+- Optional product catalogs.
+- Any future integrations.
+
+The goal is readiness for review, not a guarantee of F-Droid inclusion.
+
+==================================================
+22. IMPLEMENTATION PHASES
+==================================================
+
+Before coding:
+- Briefly describe architecture and entities.
+- List proposed dependencies with licenses and purposes.
+- Identify any unverified dependency or service constraints.
+- State which features will be delivered in the first phase.
+
+PHASE 1: TRUSTWORTHY STASH
+- Persistent database.
+- Quick and detailed entry.
+- Local photos.
+- Categories and relevant templates.
+- Batches/pieces.
+- Exact/approximate/presence-only quantities.
+- Locations.
+- Search, grid/list/cards, filters.
+- Basic settings.
+- Complete backup/restore and CSV export.
+- Core unit tests.
+
+PHASE 2: PROJECTS AND SAVED-PROJECT MATCHING
+- Project records.
+- Requirements and tools.
+- Supply linking.
+- Reservations and confirmed consumption.
+- Honest coverage states.
+- Get ideas based on saved projects.
+- Matching tests.
+
+PHASE 3: INSPIRATION ALTERNATIVES
+- Local rule-based suggestions.
+- Editable query generation.
+- Optional source directory.
+- External-browser handoff.
+- User-added sources.
+- Privacy and F-Droid anti-feature review.
+
+PHASE 4: ENTRY ACCELERATION
+- FOSS offline barcode scanning.
+- Duplicate handling.
+- Draft capture inbox improvements.
+- Approved optional product lookup only if feasible.
+- Optional storage-location QR codes.
+
+PHASE 5: RELEASE HARDENING
+- Accessibility and large-collection performance.
+- Migration and restore testing.
+- Dependency/license audit.
+- Documentation and real metadata assets.
+- Command-line release build.
+- F-Droid submission preparation.
+
+At the end of each phase:
+- Summarize implemented behavior.
+- List exact tests run and their results.
+- List unfinished or blocked work.
+- Confirm that existing saved data remains compatible.
+- Do not substitute screenshots or mock UI for working persistence and logic.
+
+Build the smallest reliable version first, but keep the data model capable of supporting the complete specification.

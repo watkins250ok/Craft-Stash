@@ -1,0 +1,9 @@
+Initial release of Craft Stash:
+• Complete offline craft supply inventory with multi-batch and piece tracking.
+• Exact, approximate, and untracked presence modes.
+• Nested storage locations hierarchy.
+• Project companion with honest requirement coverage states.
+• Deterministic saved-project matching and inspiration starters.
+• FOSS ZXing offline barcode scanner.
+• Full ZIP backup/restore with photos and CSV export.
+• Warm, accessible craft room design.

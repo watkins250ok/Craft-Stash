@@ -1,0 +1,6 @@
+{
+  "name": "Craft Stash",
+  "description": "Personal craft-supply inventory and project companion for hobby crafters.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

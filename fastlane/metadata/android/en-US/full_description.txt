@@ -1,0 +1,18 @@
+Craft Stash is a personal craft-supply inventory and project companion for hobby crafters.
+
+It helps you discover:
+• What do I have in my craft room?
+• Where is it stored?
+• Which of my saved projects can I make with my current supplies?
+• What ideas could I create with my scraps and remnants?
+
+Features:
+• Multi-batch and physical piece tracking with dye lots, remnants, and dimensions
+• Exact, approximate, and presence-only tracking modes
+• Category-specific templates for Yarn, Fabric, Paint, Beads, Paper, Tools, and Ribbon/Trim
+• Hierarchical storage locations (Room → Rolling cart → Drawer)
+• Saved project planning with honest requirement coverage states
+• On-device deterministic project matching
+• Offline barcode scanning with ZXing
+• Portable full ZIP backup (with photos) and CSV inventory export
+• 100% offline, zero tracking, zero accounts, no ads
