@@ -77,6 +77,7 @@ fun SettingsScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             TopAppBar(
                 title = { Text("Settings & Data") },
@@ -112,51 +113,26 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth().testTag("theme_settings_card")
                 ) {
                     Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = when (currentThemeMode) {
-                                    ThemeMode.SYSTEM -> Icons.Default.BrightnessAuto
-                                    ThemeMode.LIGHT -> Icons.Default.LightMode
-                                    ThemeMode.DARK -> Icons.Default.DarkMode
-                                },
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Display Theme",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        Text(
-                            text = "Choose whether Craft Stash follows your system appearance or stays in warm Light or cozy Dark mode.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             ThemeMode.values().forEach { mode ->
                                 val isSelected = currentThemeMode == mode
                                 FilterChip(
                                     selected = isSelected,
                                     onClick = { viewModel.setThemeMode(mode) },
-                                    label = { Text(mode.displayName) },
+                                    label = { Text(mode.displayName, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelSmall) },
                                     leadingIcon = {
                                         val icon = when (mode) {
                                             ThemeMode.SYSTEM -> Icons.Default.BrightnessAuto
                                             ThemeMode.LIGHT -> Icons.Default.LightMode
                                             ThemeMode.DARK -> Icons.Default.DarkMode
                                         }
-                                        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp))
                                     },
                                     modifier = Modifier
                                         .weight(1f)

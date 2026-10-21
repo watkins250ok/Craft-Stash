@@ -235,6 +235,17 @@ data class InspirationSourceEntity(
     val isBundled: Boolean = true
 )
 
+@Entity(tableName = "inspiration_gallery")
+data class InspirationGalleryItemEntity(
+    @PrimaryKey
+    val id: String,
+    val photoUri: String,
+    val sourceUrl: String = "",
+    val notes: String = "",
+    val tags: String = "", // comma-separated tags
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "saved_filters")
 data class SavedFilterEntity(
     @PrimaryKey

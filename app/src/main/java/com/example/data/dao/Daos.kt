@@ -231,6 +231,21 @@ interface InspirationSourceDao {
 }
 
 @Dao
+interface InspirationGalleryDao {
+    @Query("SELECT * FROM inspiration_gallery ORDER BY createdAt DESC")
+    fun getAllGalleryItemsFlow(): Flow<List<InspirationGalleryItemEntity>>
+
+    @Query("SELECT * FROM inspiration_gallery")
+    suspend fun getAllGalleryItems(): List<InspirationGalleryItemEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertGalleryItem(item: InspirationGalleryItemEntity)
+
+    @Delete
+    suspend fun deleteGalleryItem(item: InspirationGalleryItemEntity)
+}
+
+@Dao
 interface SavedFilterDao {
     @Query("SELECT * FROM saved_filters ORDER BY createdAt DESC")
     fun getAllSavedFiltersFlow(): Flow<List<SavedFilterEntity>>

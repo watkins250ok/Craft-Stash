@@ -11,8 +11,10 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -35,6 +37,7 @@ import com.example.domain.measurement.UnitConverter
 import com.example.domain.model.SortOrder
 import com.example.domain.model.StashViewMode
 import com.example.ui.CraftStashViewModel
+import com.example.ui.StashFilterState
 import com.example.ui.common.CraftPhotoThumbnail
 import com.example.ui.common.CraftTagChip
 import com.example.ui.common.EmptyStateView
@@ -45,27 +48,22 @@ fun StashScreen(
     viewModel: CraftStashViewModel,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToDetailedAdd: () -> Unit,
-    onNavigateToDraftInbox: () -> Unit,
-    onNavigateToLocations: () -> Unit,
     onNavigateToScanner: () -> Unit,
-    onNavigateToSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val supplies by viewModel.filteredSupplies.collectAsState()
     val allSupplies by viewModel.allSupplies.collectAsState()
     val filterState by viewModel.filterState.collectAsState()
     val selectedSupplyIds by viewModel.selectedSupplyIds.collectAsState()
-    val drafts by viewModel.drafts.collectAsState()
     val locations by viewModel.locations.collectAsState()
 
     var showQuickAddDialog by remember { mutableStateOf(false) }
     var showFabMenu by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
 
-    val categories = listOf("All", "Yarn", "Fabric", "Paint & Liquid Media", "Beads & Jewelry", "Paper & Vinyl", "Tools", "Ribbon & Trim")
-
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             TopAppBar(
                 title = {
@@ -75,44 +73,11 @@ fun StashScreen(
                         fontWeight = FontWeight.Bold
                     )
                 },
-                actions = {
-                    // Draft inbox icon with badge
-                    BadgedBox(
-                        badge = {
-                            if (drafts.isNotEmpty()) {
-                                Badge(containerColor = MaterialTheme.colorScheme.error) {
-                                    Text("${drafts.size}")
-                                }
-                            }
-                        }
-                    ) {
-                        IconButton(
-                            onClick = onNavigateToDraftInbox,
-                            modifier = Modifier.testTag("draft_inbox_button")
-                        ) {
-                            Icon(Icons.Default.PhotoLibrary, contentDescription = "Draft photo inbox")
-                        }
-                    }
-
-                    // Storage Locations button
-                    IconButton(
-                        onClick = onNavigateToLocations,
-                        modifier = Modifier.testTag("storage_locations_button")
-                    ) {
-                        Icon(Icons.Default.Inventory2, contentDescription = "Storage locations")
-                    }
-
-                    // Settings
-                    IconButton(
-                        onClick = onNavigateToSettings,
-                        modifier = Modifier.testTag("settings_button")
-                    ) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings and backup")
-                    }
-                },
+                actions = {},
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
-                )
+                ),
+                windowInsets = WindowInsets(0.dp)
             )
         },
         floatingActionButton = {
@@ -184,42 +149,110 @@ fun StashScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Search Bar & Filter Controls
+            // Search Bar
             SearchBarRow(
                 query = filterState.query,
-                onQueryChange = { viewModel.updateSearchQuery(it) },
-                viewMode = filterState.viewMode,
-                onToggleViewMode = {
-                    val next = when (filterState.viewMode) {
-                        StashViewMode.GRID -> StashViewMode.CARDS
-                        StashViewMode.CARDS -> StashViewMode.COMPACT_LIST
-                        StashViewMode.COMPACT_LIST -> StashViewMode.GRID
-                    }
-                    viewModel.setViewMode(next)
-                },
-                onOpenFilters = { showFilterSheet = true }
+                onQueryChange = { viewModel.updateSearchQuery(it) }
             )
 
-            // Category Chips Row
-            LazyRow(
+            // View modes, grid column options (if grid), and filter options on the same line beneath search bar
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                items(categories) { cat ->
-                    val isSelected = if (cat == "All") filterState.selectedCategory == null else filterState.selectedCategory.equals(cat, ignoreCase = true)
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = {
-                            if (cat == "All") viewModel.setCategoryFilter(null)
-                            else viewModel.setCategoryFilter(if (isSelected) null else cat)
-                        },
-                        label = { Text(cat) },
-                        leadingIcon = if (isSelected) {
-                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
-                        } else null
-                    )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // View options at a glance (Grid, Card, Minimal)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(20.dp))
+                            .padding(2.dp)
+                    ) {
+                        IconButton(
+                            onClick = { viewModel.setViewMode(StashViewMode.GRID) },
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(
+                                    if (filterState.viewMode == StashViewMode.GRID) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                    CircleShape
+                                )
+                                .testTag("view_mode_grid")
+                        ) {
+                            Icon(
+                                Icons.Default.GridView,
+                                contentDescription = "Grid view",
+                                tint = if (filterState.viewMode == StashViewMode.GRID) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = { viewModel.setViewMode(StashViewMode.CARDS) },
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(
+                                    if (filterState.viewMode == StashViewMode.CARDS) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                    CircleShape
+                                )
+                                .testTag("view_mode_cards")
+                        ) {
+                            Icon(
+                                Icons.Default.ViewAgenda,
+                                contentDescription = "Card view",
+                                tint = if (filterState.viewMode == StashViewMode.CARDS) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = { viewModel.setViewMode(StashViewMode.MINIMAL) },
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(
+                                    if (filterState.viewMode == StashViewMode.MINIMAL) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                    CircleShape
+                                )
+                                .testTag("view_mode_minimal")
+                        ) {
+                            Icon(
+                                Icons.Default.ViewList,
+                                contentDescription = "Minimal view",
+                                tint = if (filterState.viewMode == StashViewMode.MINIMAL) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    // Column options for Grid view (on the same line)
+                    if (filterState.viewMode == StashViewMode.GRID) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            FilterChip(
+                                selected = filterState.gridColumns == 2,
+                                onClick = { viewModel.setGridColumns(2) },
+                                label = { Text("2 Col", style = MaterialTheme.typography.labelSmall) }
+                            )
+                            FilterChip(
+                                selected = filterState.gridColumns == 3,
+                                onClick = { viewModel.setGridColumns(3) },
+                                label = { Text("3 Col", style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+                }
+
+                // Filter options button
+                IconButton(
+                    onClick = { showFilterSheet = true },
+                    modifier = Modifier.testTag("filter_options_button")
+                ) {
+                    Icon(Icons.Default.Tune, contentDescription = "Filter options")
                 }
             }
 
@@ -256,9 +289,14 @@ fun StashScreen(
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                 modifier = Modifier.testTag("get_ideas_for_selection_button")
                             ) {
-                                Icon(Icons.Default.Lightbulb, null, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Lightbulb, null, modifier = Modifier.size(14.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Get Ideas")
+                                Text(
+                                    "Get Ideas",
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
                             }
                         }
                     }
@@ -266,7 +304,7 @@ fun StashScreen(
             }
 
             // Active Filters Row (if any)
-            if (filterState.selectedCraftType != null || filterState.selectedLocationId != null || filterState.favoritesOnly || filterState.availableOnly) {
+            if (filterState.selectedCategory != null || filterState.selectedLocationId != null || filterState.selectedColor != null || filterState.selectedMaterial != null || filterState.selectedDimension != null || filterState.selectedTag != null || filterState.favoritesOnly || filterState.availableOnly) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -309,7 +347,7 @@ fun StashScreen(
                     when (filterState.viewMode) {
                         StashViewMode.GRID -> {
                             LazyVerticalGrid(
-                                columns = GridCells.Adaptive(minSize = 160.dp),
+                                columns = GridCells.Fixed(filterState.gridColumns),
                                 contentPadding = PaddingValues(16.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -321,8 +359,7 @@ fun StashScreen(
                                         isSelected = selectedSupplyIds.contains(item.supply.id),
                                         onSelectToggle = { viewModel.toggleSupplySelection(item.supply.id) },
                                         onFavoriteToggle = { viewModel.toggleFavorite(item.supply) },
-                                        onClick = { onNavigateToDetail(item.supply.id) },
-                                        locations = locations
+                                        onClick = { onNavigateToDetail(item.supply.id) }
                                     )
                                 }
                             }
@@ -345,7 +382,7 @@ fun StashScreen(
                                 }
                             }
                         }
-                        StashViewMode.COMPACT_LIST -> {
+                        StashViewMode.MINIMAL -> {
                             LazyColumn(
                                 contentPadding = PaddingValues(16.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -389,7 +426,11 @@ fun StashScreen(
             onToggleFavorites = { viewModel.toggleFavoritesFilter() },
             onToggleAvailableOnly = { viewModel.toggleAvailableOnlyFilter() },
             onSelectLocation = { viewModel.setLocationFilter(it) },
-            onSelectCraft = { viewModel.setCraftFilter(it) },
+            onSelectCategory = { viewModel.setCategoryFilter(it) },
+            onSelectColor = { viewModel.setColorFilter(it) },
+            onSelectMaterial = { viewModel.setMaterialFilter(it) },
+            onSelectDimension = { viewModel.setDimensionFilter(it) },
+            onSelectTag = { viewModel.setTagFilter(it) },
             onSelectSort = { viewModel.setSortOrder(it) },
             onClearAll = {
                 viewModel.clearAllFilters()
@@ -403,22 +444,18 @@ fun StashScreen(
 fun SearchBarRow(
     query: String,
     onQueryChange: (String) -> Unit,
-    viewMode: StashViewMode,
-    onToggleViewMode: () -> Unit,
-    onOpenFilters: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        verticalAlignment = Alignment.CenterVertically
     ) {
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
-            placeholder = { Text("Search name, brand, material, color, barcode...") },
+            placeholder = { Text("Search stash") },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             trailingIcon = {
                 if (query.isNotEmpty()) {
@@ -430,30 +467,9 @@ fun SearchBarRow(
             singleLine = true,
             shape = RoundedCornerShape(24.dp),
             modifier = Modifier
-                .weight(1f)
+                .fillMaxWidth()
                 .testTag("stash_search_input")
         )
-
-        // View Mode toggle icon
-        IconButton(
-            onClick = onToggleViewMode,
-            modifier = Modifier.testTag("toggle_view_mode_button")
-        ) {
-            val icon = when (viewMode) {
-                StashViewMode.GRID -> Icons.Default.GridView
-                StashViewMode.CARDS -> Icons.Default.ViewAgenda
-                StashViewMode.COMPACT_LIST -> Icons.Default.ViewList
-            }
-            Icon(icon, contentDescription = "Toggle view mode")
-        }
-
-        // Filter button
-        IconButton(
-            onClick = onOpenFilters,
-            modifier = Modifier.testTag("filter_options_button")
-        ) {
-            Icon(Icons.Default.Tune, contentDescription = "Filter options")
-        }
     }
 }
 
@@ -464,13 +480,8 @@ fun SupplyGridCard(
     onSelectToggle: () -> Unit,
     onFavoriteToggle: () -> Unit,
     onClick: () -> Unit,
-    locations: List<StorageLocationEntity>,
     modifier: Modifier = Modifier
 ) {
-    val totalQty = item.batches.filter { !it.isDepleted && it.quantityValue != null }.sumOf { it.quantityValue ?: 0.0 }
-    val primaryUnit = item.batches.firstOrNull()?.unit.orEmpty()
-    val locationName = locations.find { it.id == item.batches.firstOrNull()?.storageLocationId }?.name
-
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -488,7 +499,7 @@ fun SupplyGridCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(130.dp)
+                    .height(150.dp)
             ) {
                 CraftPhotoThumbnail(
                     photoUri = item.supply.coverPhotoUri,
@@ -530,54 +541,14 @@ fun SupplyGridCard(
                 }
             }
 
-            Column(modifier = Modifier.padding(10.dp)) {
+            Column(modifier = Modifier.padding(8.dp)) {
                 Text(
                     text = item.supply.name,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-
-                if (item.supply.category.isNotBlank()) {
-                    Text(
-                        text = item.supply.category,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Quantity / Batches info
-                val qtyText = if (item.batches.isEmpty()) {
-                    "No pieces logged"
-                } else {
-                    val activeBatches = item.batches.filter { !it.isDepleted }
-                    if (activeBatches.isEmpty()) "Depleted"
-                    else "${activeBatches.size} batch - ${UnitConverter.formatDisplayQuantity(totalQty, primaryUnit, item.batches.first().quantityMode)}"
-                }
-                Text(
-                    text = qtyText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                if (!locationName.isNullOrBlank()) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
-                        Icon(Icons.Default.Place, null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.outline)
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(
-                            text = locationName,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
             }
         }
     }
@@ -839,21 +810,33 @@ fun QuickAddDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilterBottomSheet(
-    filterState: com.example.ui.StashFilterState,
+    filterState: StashFilterState,
     locations: List<StorageLocationEntity>,
     onDismiss: () -> Unit,
     onToggleFavorites: () -> Unit,
     onToggleAvailableOnly: () -> Unit,
     onSelectLocation: (String?) -> Unit,
-    onSelectCraft: (String?) -> Unit,
+    onSelectCategory: (String?) -> Unit,
+    onSelectColor: (String?) -> Unit,
+    onSelectMaterial: (String?) -> Unit,
+    onSelectDimension: (String?) -> Unit,
+    onSelectTag: (String?) -> Unit,
     onSelectSort: (SortOrder) -> Unit,
     onClearAll: () -> Unit
 ) {
+    var colorInput by remember { mutableStateOf(filterState.selectedColor ?: "") }
+    var materialInput by remember { mutableStateOf(filterState.selectedMaterial ?: "") }
+    var dimensionInput by remember { mutableStateOf(filterState.selectedDimension ?: "") }
+    var tagInput by remember { mutableStateOf(filterState.selectedTag ?: "") }
+
+    val categories = listOf("All", "Yarn", "Fabric", "Paint & Liquid Media", "Beads & Jewelry", "Paper & Vinyl", "Tools", "Ribbon & Trim")
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
+                .padding(20.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Row(
@@ -883,6 +866,21 @@ fun FilterBottomSheet(
                 )
             }
 
+            // Categories
+            Text("Category", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(categories) { cat ->
+                    val isSelected = if (cat == "All") filterState.selectedCategory == null else filterState.selectedCategory.equals(cat, ignoreCase = true)
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            onSelectCategory(if (cat == "All") null else if (isSelected) null else cat)
+                        },
+                        label = { Text(cat) }
+                    )
+                }
+            }
+
             // Sort order
             Text("Sort By", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -897,7 +895,7 @@ fun FilterBottomSheet(
 
             // Filter by Location
             if (locations.isNotEmpty()) {
-                Text("Filter by Location", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Text("Storage Location", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     item {
                         FilterChip(
@@ -915,6 +913,42 @@ fun FilterBottomSheet(
                     }
                 }
             }
+
+            // Color input
+            OutlinedTextField(
+                value = colorInput,
+                onValueChange = { colorInput = it; onSelectColor(it.ifBlank { null }) },
+                label = { Text("Color") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Material input
+            OutlinedTextField(
+                value = materialInput,
+                onValueChange = { materialInput = it; onSelectMaterial(it.ifBlank { null }) },
+                label = { Text("Material") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Dimensions input
+            OutlinedTextField(
+                value = dimensionInput,
+                onValueChange = { dimensionInput = it; onSelectDimension(it.ifBlank { null }) },
+                label = { Text("Dimensions (Length or Width)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Tags input
+            OutlinedTextField(
+                value = tagInput,
+                onValueChange = { tagInput = it; onSelectTag(it.ifBlank { null }) },
+                label = { Text("Tags") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
 
             Button(
                 onClick = onDismiss,

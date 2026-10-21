@@ -1,10 +1,11 @@
 package com.example.ui.ideas
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,7 +13,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
@@ -27,57 +34,160 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.data.entity.InspirationGalleryItemEntity
 import com.example.data.entity.InspirationSourceEntity
-import com.example.domain.inspiration.InspirationEngine
-import com.example.domain.inspiration.InspirationPrompt
-import com.example.domain.matching.ProjectMatchResult
+import com.example.data.photo.PhotoManager
 import com.example.ui.CraftStashViewModel
 import com.example.ui.common.CraftPhotoThumbnail
 import com.example.ui.common.CraftTagChip
 import com.example.ui.common.EmptyStateView
-import com.example.ui.common.ProjectStatusBadge
-import java.net.URLEncoder
+import kotlinx.coroutines.launch
+import java.util.UUID
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun IdeasScreen(
     viewModel: CraftStashViewModel,
-    onNavigateToProjectDetail: (String) -> Unit,
+    onNavigateToAddProject: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val matchedProjects by viewModel.matchedProjects.collectAsState()
-    val allSupplies by viewModel.allSupplies.collectAsState()
-    val selectedSupplyIds by viewModel.selectedSupplyIds.collectAsState()
-    val matchAllSelected by viewModel.matchAllSelected.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
+    val galleryItems by viewModel.inspirationGalleryItems.collectAsState()
     val sources by viewModel.inspirationSources.collectAsState()
 
-    var activeSubTab by remember { mutableStateOf(0) } // 0 = Saved Projects Match, 1 = Craft Starters & Search, 2 = Source Directory
-    var selectedPromptForSearch by remember { mutableStateOf<InspirationPrompt?>(null) }
-    var editableSearchQuery by remember { mutableStateOf("") }
-    var showAddSourceDialog by remember { mutableStateOf(false) }
+    var activeSubTab by remember { mutableStateOf(0) } // 0 = Inspiration Gallery, 1 = Inspiration Directory
+    var galleryViewMode by remember { mutableStateOf(GalleryViewMode.THUMBNAIL_GRID) }
+    var selectedGalleryTagFilter by remember { mutableStateOf<String?>(null) }
 
-    val selectedSuppliesList = remember(selectedSupplyIds, allSupplies) {
-        selectedSupplyIds.mapNotNull { id -> allSupplies.find { it.supply.id == id } }
+    // Directory tag filter & expand/collapse
+    var isTagFilterExpanded by remember { mutableStateOf(false) }
+    var selectedDirectoryTagFilters by remember { mutableStateOf(setOf<String>()) }
+
+    var showAddGalleryDialog by remember { mutableStateOf(false) }
+    var newGalleryPhotoUri by remember { mutableStateOf<String?>(null) }
+    var newGallerySourceUrl by remember { mutableStateOf("") }
+    var newGalleryNotes by remember { mutableStateOf("") }
+    var newGallerySelectedTags by remember { mutableStateOf(setOf<String>()) }
+    var newGalleryNewTagInput by remember { mutableStateOf("") }
+
+    // Inspiration Source Editor & View Dialogs
+    var showSourceEditorDialog by remember { mutableStateOf(false) }
+    var editingSource by remember { mutableStateOf<InspirationSourceEntity?>(null) }
+    var viewingSource by remember { mutableStateOf<InspirationSourceEntity?>(null) }
+
+    var sourceNameInput by remember { mutableStateOf("") }
+    var sourceUrlInput by remember { mutableStateOf("") }
+    var sourceNotesInput by remember { mutableStateOf("") }
+    var sourceSelectedTags by remember { mutableStateOf(setOf<String>()) }
+    var sourceNewTagInput by remember { mutableStateOf("") }
+
+    val galleryImagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            coroutineScope.launch {
+                val saved = PhotoManager.savePhotoFromUri(context, uri)
+                if (saved != null) {
+                    newGalleryPhotoUri = saved
+                    newGallerySourceUrl = ""
+                    newGalleryNotes = ""
+                    newGallerySelectedTags = emptySet()
+                    newGalleryNewTagInput = ""
+                    showAddGalleryDialog = true
+                }
+            }
+        }
+    }
+
+    // All unique gallery tags
+    val allGalleryTags = remember(galleryItems) {
+        galleryItems.flatMap { item ->
+            item.tags.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        }.distinct().sorted()
+    }
+
+    // Filtered gallery items
+    val filteredGalleryItems = remember(galleryItems, selectedGalleryTagFilter) {
+        if (selectedGalleryTagFilter == null) galleryItems
+        else galleryItems.filter { item ->
+            item.tags.split(",").map { it.trim() }.any { it.equals(selectedGalleryTagFilter, ignoreCase = true) }
+        }
+    }
+
+    // All unique directory tags
+    val allDirectoryTags = remember(sources) {
+        sources.flatMap { src ->
+            src.craftTags.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        }.distinct().sorted()
+    }
+
+    // Filtered sources (always in alphabetical order)
+    val filteredSources = remember(sources, selectedDirectoryTagFilters) {
+        val sorted = sources.sortedBy { it.name.lowercase() }
+        if (selectedDirectoryTagFilters.isEmpty()) sorted
+        else sorted.filter { src ->
+            val srcTags = src.craftTags.split(",").map { it.trim() }.filter { it.isNotBlank() }
+            srcTags.any { t -> selectedDirectoryTagFilters.any { it.equals(t, ignoreCase = true) } }
+        }
     }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             TopAppBar(
-                title = { Text("Ideas & Matching", fontWeight = FontWeight.Bold) },
+                title = { Text("Inspiration & Ideas", fontWeight = FontWeight.Bold) },
                 actions = {
-                    if (selectedSupplyIds.isNotEmpty()) {
-                        FilledTonalButton(
-                            onClick = { viewModel.clearSelection() },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            modifier = Modifier.padding(end = 8.dp)
+                    if (activeSubTab == 0) {
+                        IconButton(
+                            onClick = {
+                                galleryViewMode = if (galleryViewMode == GalleryViewMode.THUMBNAIL_GRID)
+                                    GalleryViewMode.MASONRY_GRID else GalleryViewMode.THUMBNAIL_GRID
+                            },
+                            modifier = Modifier.testTag("gallery_view_mode_toggle")
                         ) {
-                            Text("Clear ${selectedSupplyIds.size} Selected")
+                            Icon(
+                                imageVector = if (galleryViewMode == GalleryViewMode.THUMBNAIL_GRID) Icons.Default.ViewAgenda else Icons.Default.GridView,
+                                contentDescription = "Toggle gallery view"
+                            )
                         }
                     }
                 }
             )
+        },
+        floatingActionButton = {
+            if (activeSubTab == 0) {
+                FloatingActionButton(
+                    onClick = {
+                        galleryImagePicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.testTag("add_gallery_item_fab")
+                ) {
+                    Icon(Icons.Default.AddAPhoto, contentDescription = "Upload inspiration image")
+                }
+            } else if (activeSubTab == 1) {
+                FloatingActionButton(
+                    onClick = {
+                        editingSource = null
+                        sourceNameInput = ""
+                        sourceUrlInput = ""
+                        sourceNotesInput = ""
+                        sourceSelectedTags = emptySet()
+                        sourceNewTagInput = ""
+                        showSourceEditorDialog = true
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.testTag("add_inspiration_source_fab")
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add inspiration destination")
+                }
+            }
         }
     ) { innerPadding ->
         Column(
@@ -85,283 +195,212 @@ fun IdeasScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Selected Stash Banner (if any)
-            if (selectedSuppliesList.isNotEmpty()) {
-                Surface(
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Finding ideas for ${selectedSuppliesList.size} selected supply:",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                        }
-
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(selectedSuppliesList) { s ->
-                                Surface(
-                                    color = MaterialTheme.colorScheme.surface,
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        CraftPhotoThumbnail(photoUri = s.supply.coverPhotoUri, modifier = Modifier.size(24.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(s.supply.name, style = MaterialTheme.typography.labelMedium, maxLines = 1)
-                                    }
-                                }
-                            }
-                        }
-
-                        // Match Mode: Any vs All
-                        if (selectedSuppliesList.size > 1) {
-                            Row(
-                                modifier = Modifier.padding(top = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                FilterChip(
-                                    selected = !matchAllSelected,
-                                    onClick = { viewModel.setMatchAllSelected(false) },
-                                    label = { Text("Use ANY selected supply") }
-                                )
-                                FilterChip(
-                                    selected = matchAllSelected,
-                                    onClick = { viewModel.setMatchAllSelected(true) },
-                                    label = { Text("Try to use ALL selected") }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
             // Sub-navigation tabs
             TabRow(selectedTabIndex = activeSubTab) {
                 Tab(
                     selected = activeSubTab == 0,
                     onClick = { activeSubTab = 0 },
-                    text = { Text("Saved Projects (${matchedProjects.size})") }
+                    text = { Text("Inspiration Gallery") }
                 )
                 Tab(
                     selected = activeSubTab == 1,
                     onClick = { activeSubTab = 1 },
-                    text = { Text("Craft Starters") }
-                )
-                Tab(
-                    selected = activeSubTab == 2,
-                    onClick = { activeSubTab = 2 },
                     text = { Text("Inspiration Directory") }
                 )
             }
 
-            // Content per Sub-Tab
             when (activeSubTab) {
                 0 -> {
-                    // TAB 0: Saved Projects Matching
-                    if (matchedProjects.isEmpty()) {
-                        EmptyStateView(
-                            icon = Icons.Default.Search,
-                            title = "No Matching Saved Projects",
-                            description = if (selectedSupplyIds.isNotEmpty())
-                                "None of your current saved projects require these specific selected supplies. Try the 'Craft Starters' tab for idea prompts!"
-                            else "No active saved projects in your collection yet.",
-                            actionLabel = "Browse Craft Starters",
-                            onActionClick = { activeSubTab = 1 },
-                            modifier = Modifier.weight(1f)
-                        )
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            item {
-                                Text(
-                                    text = if (selectedSupplyIds.isNotEmpty())
-                                        "Saved projects that can use your selected stash:"
-                                    else "All active saved projects ranked by material readiness:",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
+                    // TAB 0: Inspiration Gallery
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (allGalleryTags.isNotEmpty()) {
+                            LazyRow(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                item {
+                                    FilterChip(
+                                        selected = selectedGalleryTagFilter == null,
+                                        onClick = { selectedGalleryTagFilter = null },
+                                        label = { Text("All Tags") }
+                                    )
+                                }
+                                items(allGalleryTags) { tag ->
+                                    FilterChip(
+                                        selected = selectedGalleryTagFilter.equals(tag, ignoreCase = true),
+                                        onClick = {
+                                            selectedGalleryTagFilter = if (selectedGalleryTagFilter.equals(tag, ignoreCase = true)) null else tag
+                                        },
+                                        label = { Text(tag) }
+                                    )
+                                }
                             }
+                        }
 
-                            items(matchedProjects, key = { it.projectWithDetails.project.id }) { match ->
-                                MatchedProjectCard(
-                                    match = match,
-                                    onClick = { onNavigateToProjectDetail(match.projectWithDetails.project.id) }
-                                )
+                        if (filteredGalleryItems.isEmpty()) {
+                            EmptyStateView(
+                                icon = Icons.Default.PhotoLibrary,
+                                title = "Inspiration Gallery is Empty",
+                                description = "Upload photos of mood boards, color palettes, patterns, or items that inspire your crafting.",
+                                actionLabel = "Upload Image",
+                                onActionClick = {
+                                    galleryImagePicker.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        } else {
+                            Box(modifier = Modifier.weight(1f)) {
+                                when (galleryViewMode) {
+                                    GalleryViewMode.THUMBNAIL_GRID -> {
+                                        LazyVerticalGrid(
+                                            columns = GridCells.Fixed(3),
+                                            contentPadding = PaddingValues(16.dp),
+                                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            items(filteredGalleryItems, key = { it.id }) { item ->
+                                                GalleryThumbnailCard(
+                                                    item = item,
+                                                    onConvertToProject = {
+                                                        viewModel.prepareProjectFromGallery(item)
+                                                        onNavigateToAddProject()
+                                                    },
+                                                    onDelete = { viewModel.deleteGalleryItem(item) }
+                                                )
+                                            }
+                                        }
+                                    }
+                                    GalleryViewMode.MASONRY_GRID -> {
+                                        LazyVerticalGrid(
+                                            columns = GridCells.Fixed(2),
+                                            contentPadding = PaddingValues(16.dp),
+                                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            items(filteredGalleryItems, key = { it.id }) { item ->
+                                                GalleryMasonryCard(
+                                                    item = item,
+                                                    onConvertToProject = {
+                                                        viewModel.prepareProjectFromGallery(item)
+                                                        onNavigateToAddProject()
+                                                    },
+                                                    onDelete = { viewModel.deleteGalleryItem(item) }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
                 1 -> {
-                    // TAB 1: Local Rule-Based Inspiration Starters
-                    val prompts = remember(selectedSuppliesList) {
-                        InspirationEngine.findPrompts(selectedSuppliesList)
-                    }
-
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        item {
-                            Surface(
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = "Locally generated idea starters connecting your stash materials (scraps, remnants, skeins) to project possibilities without AI. Never leaks personal notes or location.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(12.dp)
-                                )
-                            }
-                        }
-
-                        items(prompts) { prompt ->
-                            Card(
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                            ) {
-                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(prompt.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                        CraftTagChip(prompt.craftType)
-                                    }
-
-                                    Text(prompt.description, style = MaterialTheme.typography.bodyMedium)
-
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 4.dp)) {
-                                        if (prompt.isBeginnerFriendly) CraftTagChip("Beginner")
-                                        if (prompt.isScrapFriendly) CraftTagChip("Scrap / Remnant Friendly")
-                                        if (!prompt.requiresMachine) CraftTagChip("No Machine Needed")
-                                    }
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.End
-                                    ) {
-                                        Button(
-                                            onClick = {
-                                                selectedPromptForSearch = prompt
-                                                editableSearchQuery = InspirationEngine.generateSearchQuery(prompt, selectedSuppliesList)
+                    // TAB 1: Inspiration Directory
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Expandable / collapsible multi-select tag filter menu
+                        Card(
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { isTagFilterExpanded = !isTagFilterExpanded },
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (selectedDirectoryTagFilters.isEmpty()) "Filter by Tags (All)"
+                                        else "Filter by Tags (${selectedDirectoryTagFilters.size} selected)",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (selectedDirectoryTagFilters.isNotEmpty()) {
+                                            TextButton(onClick = { selectedDirectoryTagFilters = emptySet() }) {
+                                                Text("Clear", style = MaterialTheme.typography.labelSmall)
                                             }
-                                        ) {
-                                            Icon(Icons.Default.Search, null, modifier = Modifier.size(16.dp))
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Search Ideas")
+                                        }
+                                        Icon(
+                                            imageVector = if (isTagFilterExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                            contentDescription = if (isTagFilterExpanded) "Collapse tag filter" else "Expand tag filter"
+                                        )
+                                    }
+                                }
+
+                                if (isTagFilterExpanded && allDirectoryTags.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    FlowRow(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        allDirectoryTags.forEach { tag ->
+                                            val isSelected = selectedDirectoryTagFilters.contains(tag)
+                                            FilterChip(
+                                                selected = isSelected,
+                                                onClick = {
+                                                    selectedDirectoryTagFilters = if (isSelected) {
+                                                        selectedDirectoryTagFilters - tag
+                                                    } else {
+                                                        selectedDirectoryTagFilters + tag
+                                                    }
+                                                },
+                                                label = { Text(tag) }
+                                            )
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                }
-                2 -> {
-                    // TAB 2: Inspiration Source Directory
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        item {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Inspiration Directory", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Row {
-                                    TextButton(onClick = { viewModel.restoreDefaultSources() }) {
-                                        Text("Restore Defaults")
-                                    }
-                                    IconButton(onClick = { showAddSourceDialog = true }) {
-                                        Icon(Icons.Default.Add, contentDescription = "Add custom destination")
-                                    }
-                                }
-                            }
-                        }
 
-                        item {
-                            Text(
-                                text = "Craft Stash does not embed proprietary web scrapers or require logins. You can search these destinations directly in your external browser.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline
+                        if (filteredSources.isEmpty()) {
+                            EmptyStateView(
+                                icon = Icons.Default.BookmarkBorder,
+                                title = "No Inspiration Destinations",
+                                description = "Add your favorite craft blogs, pattern stores, and maker galleries.",
+                                actionLabel = "Add Destination",
+                                onActionClick = {
+                                    editingSource = null
+                                    sourceNameInput = ""
+                                    sourceUrlInput = ""
+                                    sourceNotesInput = ""
+                                    sourceSelectedTags = emptySet()
+                                    sourceNewTagInput = ""
+                                    showSourceEditorDialog = true
+                                },
+                                modifier = Modifier.weight(1f)
                             )
-                        }
-
-                        items(sources, key = { it.id }) { src ->
-                            Card(
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        } else {
+                            LazyColumn(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                                    .fillMaxSize()
+                                    .padding(horizontal = 16.dp),
+                                contentPadding = PaddingValues(vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(src.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                        Switch(
-                                            checked = src.isEnabled,
-                                            onCheckedChange = { viewModel.toggleSourceEnabled(src) }
-                                        )
-                                    }
-
-                                    Text(src.description, style = MaterialTheme.typography.bodySmall)
-
-                                    if (src.craftTags.isNotBlank()) {
-                                        CraftTagChip(src.craftTags)
-                                    }
-
-                                    if (src.accountPaymentNote.isNotBlank()) {
-                                        Text(
-                                            text = "Note: ${src.accountPaymentNote}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.outline
-                                        )
-                                    }
-
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                        OutlinedButton(
-                                            onClick = {
-                                                try {
-                                                    val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(src.baseUrl))
-                                                    context.startActivity(browserIntent)
-                                                } catch (_: Exception) {}
-                                            }
-                                        ) {
-                                            Icon(Icons.AutoMirrored.Filled.OpenInNew, null, modifier = Modifier.size(16.dp))
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Open Site")
-                                        }
-                                    }
+                                items(filteredSources, key = { it.id }) { source ->
+                                    InspirationSourceCard(
+                                        source = source,
+                                        onVisit = {
+                                            try {
+                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(source.baseUrl))
+                                                context.startActivity(intent)
+                                            } catch (_: Exception) {}
+                                        },
+                                        onView = { viewingSource = source },
+                                        onDelete = { viewModel.deleteInspirationSource(source) }
+                                    )
                                 }
                             }
                         }
@@ -371,50 +410,87 @@ fun IdeasScreen(
         }
     }
 
-    // Search Query Generator Dialog
-    if (selectedPromptForSearch != null) {
+    // Add Gallery Item Dialog
+    if (showAddGalleryDialog) {
+        val existingTags = allGalleryTags
         AlertDialog(
-            onDismissRequest = { selectedPromptForSearch = null },
-            title = { Text("Search Inspiration", fontWeight = FontWeight.Bold) },
+            onDismissRequest = { showAddGalleryDialog = false },
+            title = { Text("Add Inspiration Image", fontWeight = FontWeight.Bold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        "You can edit the search phrase before copying or launching in your browser. Craft Stash will never transmit private notes or locations.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (newGalleryPhotoUri != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        ) {
+                            CraftPhotoThumbnail(photoUri = newGalleryPhotoUri, modifier = Modifier.fillMaxSize())
+                        }
+                    }
 
                     OutlinedTextField(
-                        value = editableSearchQuery,
-                        onValueChange = { editableSearchQuery = it },
-                        label = { Text("Search Query") },
+                        value = newGallerySourceUrl,
+                        onValueChange = { newGallerySourceUrl = it },
+                        label = { Text("Source URL (Optional)") },
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Text("Open destination:", style = MaterialTheme.typography.labelMedium)
-                    sources.filter { it.isEnabled }.forEach { src ->
-                        OutlinedButton(
-                            onClick = {
-                                val encoded = URLEncoder.encode(editableSearchQuery, "UTF-8")
-                                val targetUrl = if (!src.searchTemplate.isNullOrBlank()) {
-                                    src.searchTemplate.replace("%s", encoded)
-                                } else {
-                                    src.baseUrl
-                                }
+                    OutlinedTextField(
+                        value = newGalleryNotes,
+                        onValueChange = { newGalleryNotes = it },
+                        label = { Text("Notes / Description (Optional)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                                // Also copy query to clipboard for convenience
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Craft Search", editableSearchQuery))
-
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl))
-                                    context.startActivity(intent)
-                                } catch (_: Exception) {}
-
-                                selectedPromptForSearch = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
+                    Text("Tags", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                    if (existingTags.isNotEmpty()) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text("Open in ${src.name}")
+                            existingTags.forEach { tag ->
+                                val isSelected = newGallerySelectedTags.contains(tag)
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        newGallerySelectedTags = if (isSelected) newGallerySelectedTags - tag else newGallerySelectedTags + tag
+                                    },
+                                    label = { Text(tag) }
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = newGalleryNewTagInput,
+                            onValueChange = { newGalleryNewTagInput = it },
+                            label = { Text("New Tag") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = {
+                                if (newGalleryNewTagInput.isNotBlank()) {
+                                    val t = newGalleryNewTagInput.trim()
+                                    newGallerySelectedTags = newGallerySelectedTags + t
+                                    newGalleryNewTagInput = ""
+                                }
+                            },
+                            enabled = newGalleryNewTagInput.isNotBlank()
+                        ) {
+                            Text("Add")
                         }
                     }
                 }
@@ -422,56 +498,196 @@ fun IdeasScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Craft Search", editableSearchQuery))
-                        viewModel.showMessage("Query copied to clipboard!")
-                        selectedPromptForSearch = null
-                    }
+                        newGalleryPhotoUri?.let { uri ->
+                            viewModel.addGalleryItem(
+                                photoUri = uri,
+                                sourceUrl = newGallerySourceUrl,
+                                notes = newGalleryNotes,
+                                tags = newGallerySelectedTags.toList()
+                            )
+                        }
+                        showAddGalleryDialog = false
+                    },
+                    enabled = newGalleryPhotoUri != null
                 ) {
-                    Text("Copy Query")
+                    Text("Save to Gallery")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { selectedPromptForSearch = null }) {
+                TextButton(onClick = { showAddGalleryDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // View Mode Dialog for Inspiration Destination
+    if (viewingSource != null) {
+        val src = viewingSource!!
+        AlertDialog(
+            onDismissRequest = { viewingSource = null },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(src.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    IconButton(onClick = {
+                        viewingSource = null
+                        editingSource = src
+                        sourceNameInput = src.name
+                        sourceUrlInput = src.baseUrl
+                        sourceNotesInput = src.description
+                        sourceSelectedTags = src.craftTags.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+                        sourceNewTagInput = ""
+                        showSourceEditorDialog = true
+                    }) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit destination")
+                    }
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("URL: ${src.baseUrl}", style = MaterialTheme.typography.bodyMedium)
+                    if (src.description.isNotBlank()) {
+                        Text("Notes: ${src.description}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (src.craftTags.isNotBlank()) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            src.craftTags.split(",").map { it.trim() }.filter { it.isNotBlank() }.forEach { tag ->
+                                CraftTagChip(tag)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { viewingSource = null }) {
                     Text("Close")
                 }
             }
         )
     }
 
-    // Add Custom Destination Dialog
-    if (showAddSourceDialog) {
-        var srcName by remember { mutableStateOf("") }
-        var srcUrl by remember { mutableStateOf("https://") }
-        var srcTemplate by remember { mutableStateOf("") }
-        var srcTags by remember { mutableStateOf("All") }
-        var srcDesc by remember { mutableStateOf("") }
-
+    // Destination Editor Dialog (Adding or Editing)
+    if (showSourceEditorDialog) {
+        val existingTags = allDirectoryTags
         AlertDialog(
-            onDismissRequest = { showAddSourceDialog = false },
-            title = { Text("Add Custom Destination", fontWeight = FontWeight.Bold) },
+            onDismissRequest = { showSourceEditorDialog = false },
+            title = { Text(if (editingSource == null) "Add Destination" else "Edit Destination", fontWeight = FontWeight.Bold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = srcName, onValueChange = { srcName = it }, label = { Text("Site Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = srcUrl, onValueChange = { srcUrl = it }, label = { Text("Base URL") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = srcTemplate, onValueChange = { srcTemplate = it }, label = { Text("Search URL Template (with %s)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = srcTags, onValueChange = { srcTags = it }, label = { Text("Craft Tags") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = srcDesc, onValueChange = { srcDesc = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedTextField(
+                        value = sourceNameInput,
+                        onValueChange = { sourceNameInput = it },
+                        label = { Text("Destination Name *") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = sourceUrlInput,
+                        onValueChange = { sourceUrlInput = it },
+                        label = { Text("URL *") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = sourceNotesInput,
+                        onValueChange = { sourceNotesInput = it },
+                        label = { Text("Notes") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Text("Tags", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                    if (existingTags.isNotEmpty()) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            existingTags.forEach { tag ->
+                                val isSelected = sourceSelectedTags.contains(tag)
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        sourceSelectedTags = if (isSelected) sourceSelectedTags - tag else sourceSelectedTags + tag
+                                    },
+                                    label = { Text(tag) }
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = sourceNewTagInput,
+                            onValueChange = { sourceNewTagInput = it },
+                            label = { Text("New Tag") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = {
+                                if (sourceNewTagInput.isNotBlank()) {
+                                    val t = sourceNewTagInput.trim()
+                                    sourceSelectedTags = sourceSelectedTags + t
+                                    sourceNewTagInput = ""
+                                }
+                            },
+                            enabled = sourceNewTagInput.isNotBlank()
+                        ) {
+                            Text("Add")
+                        }
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.addInspirationSource(srcName.trim(), srcUrl.trim(), srcTemplate.trim().ifBlank { null }, srcTags.trim(), srcDesc.trim())
-                        showAddSourceDialog = false
+                        if (sourceNameInput.isNotBlank() && sourceUrlInput.isNotBlank()) {
+                            val tagsStr = sourceSelectedTags.joinToString(",")
+                            if (editingSource == null) {
+                                viewModel.addInspirationSource(
+                                    name = sourceNameInput.trim(),
+                                    baseUrl = sourceUrlInput.trim(),
+                                    craftTags = tagsStr,
+                                    description = sourceNotesInput.trim()
+                                )
+                            } else {
+                                val updated = editingSource!!.copy(
+                                    name = sourceNameInput.trim(),
+                                    baseUrl = sourceUrlInput.trim(),
+                                    craftTags = tagsStr,
+                                    description = sourceNotesInput.trim()
+                                )
+                                viewModel.updateInspirationSource(updated)
+                            }
+                            showSourceEditorDialog = false
+                            editingSource = null
+                        }
                     },
-                    enabled = srcName.isNotBlank() && srcUrl.isNotBlank()
+                    enabled = sourceNameInput.isNotBlank() && sourceUrlInput.isNotBlank()
                 ) {
-                    Text("Add")
+                    Text("Save")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddSourceDialog = false }) {
+                TextButton(onClick = {
+                    showSourceEditorDialog = false
+                    editingSource = null
+                }) {
                     Text("Cancel")
                 }
             }
@@ -479,71 +695,195 @@ fun IdeasScreen(
     }
 }
 
+enum class GalleryViewMode {
+    THUMBNAIL_GRID,
+    MASONRY_GRID
+}
+
 @Composable
-fun MatchedProjectCard(
-    match: ProjectMatchResult,
-    onClick: () -> Unit,
+fun GalleryThumbnailCard(
+    item: InspirationGalleryItemEntity,
+    onConvertToProject: () -> Unit,
+    onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val project = match.projectWithDetails.project
-
     Card(
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (match.isReadyToMake) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-            else MaterialTheme.colorScheme.surface
-        ),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .border(
-                1.dp,
-                if (match.isReadyToMake) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                RoundedCornerShape(14.dp)
-            )
+            .aspectRatio(1f)
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            CraftPhotoThumbnail(photoUri = item.photoUri, modifier = Modifier.fillMaxSize())
+
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White, modifier = Modifier.size(14.dp))
+                }
+            }
+
+            Button(
+                onClick = onConvertToProject,
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(4.dp)
+            ) {
+                Text("To Project", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun GalleryMasonryCard(
+    item: InspirationGalleryItemEntity,
+    onConvertToProject: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+            ) {
+                CraftPhotoThumbnail(photoUri = item.photoUri, modifier = Modifier.fillMaxSize())
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .size(28.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White, modifier = Modifier.size(14.dp))
+                }
+            }
+
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (item.notes.isNotBlank()) {
+                    Text(
+                        text = item.notes,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                if (item.sourceUrl.isNotBlank()) {
+                    Text(
+                        text = item.sourceUrl,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                if (item.tags.isNotBlank()) {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        item.tags.split(",").map { it.trim() }.filter { it.isNotBlank() }.forEach { tag ->
+                            CraftTagChip(tag)
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = onConvertToProject,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.DesignServices, null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Convert to Project", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun InspirationSourceCard(
+    source: InspirationSourceEntity,
+    onVisit: () -> Unit,
+    onView: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                ProjectStatusBadge(status = project.status)
-            }
+                Text(
+                    text = source.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
 
-            if (project.craftType.isNotBlank()) {
-                CraftTagChip(project.craftType)
-            }
-
-            // Explanations list
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                match.matchedExplanations.take(4).forEach { expl ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = if (expl.startsWith("Confirmed")) Icons.Default.CheckCircle
-                            else if (expl.startsWith("Missing")) Icons.Default.Cancel
-                            else Icons.Default.Info,
-                            contentDescription = null,
-                            tint = if (expl.startsWith("Confirmed")) Color(0xFF2E7D32)
-                            else if (expl.startsWith("Missing")) Color(0xFFC62828)
-                            else MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(expl, style = MaterialTheme.typography.bodySmall)
+                // Actions: Visit (link icon), View (eye icon), Delete (trashcan icon). No toggle.
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onVisit, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Link, contentDescription = "Visit destination", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(onClick = onView, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Visibility, contentDescription = "View details", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete destination", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                     }
                 }
             }
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            if (source.description.isNotBlank()) {
                 Text(
-                    text = "Open Project →",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    text = source.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
+            }
+
+            if (source.craftTags.isNotBlank()) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    source.craftTags.split(",").map { it.trim() }.filter { it.isNotBlank() }.forEach { tag ->
+                        CraftTagChip(tag)
+                    }
+                }
             }
         }
     }

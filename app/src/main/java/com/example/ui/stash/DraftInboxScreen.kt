@@ -70,6 +70,7 @@ fun DraftInboxScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             TopAppBar(
                 title = { Text("Draft Inbox (Capture Now)") },

@@ -23,10 +23,11 @@ import java.util.UUID
         ProjectAllocationEntity::class,
         ConsumptionRecordEntity::class,
         InspirationSourceEntity::class,
+        InspirationGalleryItemEntity::class,
         SavedFilterEntity::class,
         AppSettingsEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -39,6 +40,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun projectAllocationDao(): ProjectAllocationDao
     abstract fun consumptionDao(): ConsumptionDao
     abstract fun inspirationSourceDao(): InspirationSourceDao
+    abstract fun inspirationGalleryDao(): InspirationGalleryDao
     abstract fun savedFilterDao(): SavedFilterDao
     abstract fun appSettingsDao(): AppSettingsDao
 
@@ -54,6 +56,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "craft_stash.db"
                 )
                     .addCallback(DatabaseCallback(scope))
+                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance
@@ -64,55 +67,66 @@ abstract class AppDatabase : RoomDatabase() {
             InspirationSourceEntity(
                 id = "src_pinterest",
                 name = "Pinterest",
-                baseUrl = "https://www.pinterest.com",
+                baseUrl = "https://www.pinterest.com/",
                 searchTemplate = "https://www.pinterest.com/search/pins/?q=%s",
-                craftTags = "All, Sewing, Knitting, Crochet, Embroidery, Jewelry, Paper",
+                craftTags = "general, crochet, embroidery",
                 description = "Broad visual inspiration and maker boards.",
-                accountPaymentNote = "Free browsing; account may be requested by Pinterest for extensive scrolling.",
-                isEnabled = true,
-                isBundled = true
-            ),
-            InspirationSourceEntity(
-                id = "src_ravelry",
-                name = "Ravelry",
-                baseUrl = "https://www.ravelry.com",
-                searchTemplate = "https://www.ravelry.com/patterns/search#query=%s",
-                craftTags = "Knitting, Crochet, Weaving, Spinning",
-                description = "Knitting and crochet community pattern directory and yarn database.",
-                accountPaymentNote = "Free account required to save or purchase some community patterns; many free patterns available.",
+                accountPaymentNote = "Free browsing.",
                 isEnabled = true,
                 isBundled = true
             ),
             InspirationSourceEntity(
                 id = "src_dmc",
-                name = "DMC",
-                baseUrl = "https://www.dmc.com",
-                searchTemplate = "https://www.dmc.com/search?q=%s",
-                craftTags = "Embroidery, Cross Stitch, Needlepoint, Punch Needle",
-                description = "Embroidery floss manufacturer pattern and tutorial library.",
-                accountPaymentNote = "Offers both free downloadable PDF patterns and paid design kits.",
+                name = "DMC Patterns",
+                baseUrl = "https://www.dmc.com/US/en/patterns",
+                searchTemplate = "https://www.dmc.com/US/en/patterns?q=%s",
+                craftTags = "crochet, embroidery, felting, cross stitch, weaving, needlework",
+                description = "Embroidery and needlework pattern library.",
+                accountPaymentNote = "Free pattern library.",
                 isEnabled = true,
                 isBundled = true
             ),
             InspirationSourceEntity(
-                id = "src_instructables",
-                name = "Instructables",
-                baseUrl = "https://www.instructables.com",
-                searchTemplate = "https://www.instructables.com/howto/%s/",
-                craftTags = "DIY, Woodworking, Sewing, Jewelry, Electronics, Paper",
-                description = "Step-by-step community craft and maker tutorials.",
-                accountPaymentNote = "Free open reading; free account optional.",
+                id = "src_ravelry",
+                name = "Ravelry Patterns",
+                baseUrl = "https://www.ravelry.com/patterns",
+                searchTemplate = "https://www.ravelry.com/patterns/search#query=%s",
+                craftTags = "yarn, crochet, knitting",
+                description = "Knitting and crochet community pattern directory and yarn database.",
+                accountPaymentNote = "Requires login",
                 isEnabled = true,
                 isBundled = true
             ),
             InspirationSourceEntity(
-                id = "src_duckduckgo",
-                name = "Web Search",
-                baseUrl = "https://duckduckgo.com",
-                searchTemplate = "https://duckduckgo.com/?q=%s",
-                craftTags = "All Crafts",
-                description = "Privacy-friendly general web search for independent craft blogs and tutorials.",
-                accountPaymentNote = "No account needed.",
+                id = "src_craftsy",
+                name = "Craftsy Patterns",
+                baseUrl = "https://www.craftsy.com/patterns",
+                searchTemplate = "https://www.craftsy.com/patterns/search?q=%s",
+                craftTags = "quilting, sewing, crochet",
+                description = "Craftsy pattern directory.",
+                accountPaymentNote = "Free and paid patterns available.",
+                isEnabled = true,
+                isBundled = true
+            ),
+            InspirationSourceEntity(
+                id = "src_spruce",
+                name = "The Spruce Crafts",
+                baseUrl = "https://www.thesprucecrafts.com/",
+                searchTemplate = "https://www.thesprucecrafts.com/search?q=%s",
+                craftTags = "paper, needlework, kids, general",
+                description = "Craft projects and tutorials.",
+                accountPaymentNote = "Free articles and guides.",
+                isEnabled = true,
+                isBundled = true
+            ),
+            InspirationSourceEntity(
+                id = "src_creativebug",
+                name = "Creativebug Patterns",
+                baseUrl = "https://www.creativebug.com/patterns",
+                searchTemplate = "https://www.creativebug.com/search?q=%s",
+                craftTags = "needlework, sewing, knitting, crochet, quilting",
+                description = "Creativebug workshop patterns.",
+                accountPaymentNote = "Subscription or login may be required.",
                 isEnabled = true,
                 isBundled = true
             )
@@ -124,6 +138,15 @@ abstract class AppDatabase : RoomDatabase() {
     ) : RoomDatabase.Callback() {
         override fun onCreate(db: SupportSQLiteDatabase) {
             super.onCreate(db)
+            INSTANCE?.let { database ->
+                scope.launch(Dispatchers.IO) {
+                    populateDefaultSources(database.inspirationSourceDao())
+                }
+            }
+        }
+
+        override fun onOpen(db: SupportSQLiteDatabase) {
+            super.onOpen(db)
             INSTANCE?.let { database ->
                 scope.launch(Dispatchers.IO) {
                     populateDefaultSources(database.inspirationSourceDao())

@@ -63,6 +63,11 @@ fun AddEditProjectScreen(
                 notes = item.project.notes
                 coverPhotoUri = item.project.coverPhotoUri
             }
+        } else if (viewModel.pendingProjectCoverPhoto != null || viewModel.pendingProjectTitle.isNotBlank()) {
+            title = viewModel.pendingProjectTitle
+            coverPhotoUri = viewModel.pendingProjectCoverPhoto
+            notes = viewModel.pendingProjectNotes
+            viewModel.clearPendingProject()
         }
     }
 
@@ -81,6 +86,7 @@ fun AddEditProjectScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             TopAppBar(
                 title = { Text(if (projectId == null) "New Project" else "Edit Project") },
@@ -175,7 +181,7 @@ fun AddEditProjectScreen(
             }
 
             item {
-                Text("Initial Status", style = MaterialTheme.typography.labelMedium)
+                Text("Initial Phase", style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(ProjectStatus.IDEA, ProjectStatus.PLANNED, ProjectStatus.IN_PROGRESS).forEach { st ->
                         FilterChip(

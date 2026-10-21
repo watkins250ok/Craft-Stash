@@ -25,6 +25,7 @@ class CraftStashRepository(
     private val allocDao = database.projectAllocationDao()
     private val consumptionDao = database.consumptionDao()
     private val sourceDao = database.inspirationSourceDao()
+    private val galleryDao = database.inspirationGalleryDao()
     private val filterDao = database.savedFilterDao()
     private val settingsDao = database.appSettingsDao()
 
@@ -34,6 +35,7 @@ class CraftStashRepository(
     val projectsWithDetailsFlow: Flow<List<ProjectWithDetails>> = projectDao.getAllProjectsWithDetailsFlow()
     val allAllocationsFlow: Flow<List<ProjectAllocationEntity>> = allocDao.getAllAllocationsFlow()
     val inspirationSourcesFlow: Flow<List<InspirationSourceEntity>> = sourceDao.getAllSourcesFlow()
+    val inspirationGalleryFlow: Flow<List<InspirationGalleryItemEntity>> = galleryDao.getAllGalleryItemsFlow()
     val savedFiltersFlow: Flow<List<SavedFilterEntity>> = filterDao.getAllSavedFiltersFlow()
 
     fun getSupplyFlow(supplyId: String): Flow<SupplyWithBatches?> = supplyDao.getSupplyWithBatchesFlow(supplyId)
@@ -236,6 +238,15 @@ class CraftStashRepository(
     suspend fun restoreDefaultInspirationSources() = withContext(Dispatchers.IO) {
         sourceDao.deleteBundledSources()
         sourceDao.insertSources(AppDatabase.DEFAULT_INSPIRATION_SOURCES)
+    }
+
+    // Inspiration gallery
+    suspend fun saveGalleryItem(item: InspirationGalleryItemEntity) = withContext(Dispatchers.IO) {
+        galleryDao.insertGalleryItem(item)
+    }
+
+    suspend fun deleteGalleryItem(item: InspirationGalleryItemEntity) = withContext(Dispatchers.IO) {
+        galleryDao.deleteGalleryItem(item)
     }
 
     // Saved filters

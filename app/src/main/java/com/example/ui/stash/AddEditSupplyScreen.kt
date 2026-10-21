@@ -136,6 +136,7 @@ fun AddEditSupplyScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             TopAppBar(
                 title = { Text(if (supplyId == null) "Add Craft Supply" else "Edit Supply") },

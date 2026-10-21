@@ -60,9 +60,114 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentRoute = navBackStackEntry?.destination?.route
+
                 Scaffold(
                     snackbarHost = { SnackbarHost(snackbarHostState) },
                     contentWindowInsets = WindowInsets.safeDrawing,
+                    bottomBar = {
+                        NavigationBar(
+                            windowInsets = NavigationBarDefaults.windowInsets,
+                            modifier = Modifier
+                                .testTag("bottom_nav_bar")
+                        ) {
+                            val isMain = currentRoute == "main"
+                            NavigationBarItem(
+                                selected = isMain && selectedTab == 0,
+                                onClick = {
+                                    viewModel.selectTab(0)
+                                    if (!isMain) navController.navigate("main") { popUpTo("main") { inclusive = false } }
+                                },
+                                icon = {
+                                    Icon(
+                                        if (isMain && selectedTab == 0) Icons.Default.Inventory else Icons.Outlined.Inventory2,
+                                        contentDescription = "Stash",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                label = { Text("Stash", style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.testTag("nav_tab_stash")
+                            )
+                            NavigationBarItem(
+                                selected = isMain && selectedTab == 1,
+                                onClick = {
+                                    viewModel.selectTab(1)
+                                    if (!isMain) navController.navigate("main") { popUpTo("main") { inclusive = false } }
+                                },
+                                icon = {
+                                    Icon(
+                                        if (isMain && selectedTab == 1) Icons.Default.DesignServices else Icons.Outlined.DesignServices,
+                                        contentDescription = "Projects",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                label = { Text("Projects", style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.testTag("nav_tab_projects")
+                            )
+                            NavigationBarItem(
+                                selected = isMain && selectedTab == 2,
+                                onClick = {
+                                    viewModel.selectTab(2)
+                                    if (!isMain) navController.navigate("main") { popUpTo("main") { inclusive = false } }
+                                },
+                                icon = {
+                                    Icon(
+                                        if (isMain && selectedTab == 2) Icons.Default.Lightbulb else Icons.Outlined.Lightbulb,
+                                        contentDescription = "Ideas",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                label = { Text("Ideas", style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.testTag("nav_tab_ideas")
+                            )
+                            NavigationBarItem(
+                                selected = currentRoute == "draft_inbox",
+                                onClick = {
+                                    navController.navigate("draft_inbox") { launchSingleTop = true }
+                                },
+                                icon = {
+                                    Icon(
+                                        Icons.Default.PhotoLibrary,
+                                        contentDescription = "Drafts",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                label = { Text("Drafts", style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.testTag("nav_tab_drafts")
+                            )
+                            NavigationBarItem(
+                                selected = currentRoute == "locations",
+                                onClick = {
+                                    navController.navigate("locations") { launchSingleTop = true }
+                                },
+                                icon = {
+                                    Icon(
+                                        Icons.Default.Place,
+                                        contentDescription = "Locations",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                label = { Text("Locs", style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.testTag("nav_tab_locations")
+                            )
+                            NavigationBarItem(
+                                selected = currentRoute == "settings",
+                                onClick = {
+                                    navController.navigate("settings") { launchSingleTop = true }
+                                },
+                                icon = {
+                                    Icon(
+                                        Icons.Default.Settings,
+                                        contentDescription = "Settings",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                label = { Text("Settings", style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.testTag("nav_tab_settings")
+                            )
+                        }
+                    },
                     modifier = Modifier.fillMaxSize()
                 ) { paddingValues ->
                     NavHost(
@@ -74,76 +179,23 @@ class MainActivity : ComponentActivity() {
                     ) {
                         // Main Bottom-Nav Screen (Stash, Projects, Ideas)
                         composable("main") {
-                            Scaffold(
-                                bottomBar = {
-                                    NavigationBar(
-                                        windowInsets = WindowInsets.navigationBars,
-                                        modifier = Modifier.testTag("bottom_nav_bar")
-                                    ) {
-                                        NavigationBarItem(
-                                            selected = selectedTab == 0,
-                                            onClick = { viewModel.selectTab(0) },
-                                            icon = {
-                                                Icon(
-                                                    if (selectedTab == 0) Icons.Default.Inventory else Icons.Outlined.Inventory2,
-                                                    contentDescription = "Stash"
-                                                )
-                                            },
-                                            label = { Text("Stash") },
-                                            modifier = Modifier.testTag("nav_tab_stash")
-                                        )
-                                        NavigationBarItem(
-                                            selected = selectedTab == 1,
-                                            onClick = { viewModel.selectTab(1) },
-                                            icon = {
-                                                Icon(
-                                                    if (selectedTab == 1) Icons.Default.DesignServices else Icons.Outlined.DesignServices,
-                                                    contentDescription = "Projects"
-                                                )
-                                            },
-                                            label = { Text("Projects") },
-                                            modifier = Modifier.testTag("nav_tab_projects")
-                                        )
-                                        NavigationBarItem(
-                                            selected = selectedTab == 2,
-                                            onClick = { viewModel.selectTab(2) },
-                                            icon = {
-                                                Icon(
-                                                    if (selectedTab == 2) Icons.Default.Lightbulb else Icons.Outlined.Lightbulb,
-                                                    contentDescription = "Ideas"
-                                                )
-                                            },
-                                            label = { Text("Ideas") },
-                                            modifier = Modifier.testTag("nav_tab_ideas")
-                                        )
-                                    }
-                                }
-                            ) { innerPadding ->
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(innerPadding)
-                                ) {
-                                    when (selectedTab) {
-                                        0 -> StashScreen(
-                                            viewModel = viewModel,
-                                            onNavigateToDetail = { id -> navController.navigate("supply_detail/$id") },
-                                            onNavigateToDetailedAdd = { navController.navigate("add_supply") },
-                                            onNavigateToDraftInbox = { navController.navigate("draft_inbox") },
-                                            onNavigateToLocations = { navController.navigate("locations") },
-                                            onNavigateToScanner = { navController.navigate("scanner") },
-                                            onNavigateToSettings = { navController.navigate("settings") }
-                                        )
-                                        1 -> ProjectsScreen(
-                                            viewModel = viewModel,
-                                            onNavigateToProjectDetail = { id -> navController.navigate("project_detail/$id") },
-                                            onNavigateToAddProject = { navController.navigate("add_project") }
-                                        )
-                                        2 -> IdeasScreen(
-                                            viewModel = viewModel,
-                                            onNavigateToProjectDetail = { id -> navController.navigate("project_detail/$id") }
-                                        )
-                                    }
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                when (selectedTab) {
+                                    0 -> StashScreen(
+                                        viewModel = viewModel,
+                                        onNavigateToDetail = { id -> navController.navigate("supply_detail/$id") },
+                                        onNavigateToDetailedAdd = { navController.navigate("add_supply") },
+                                        onNavigateToScanner = { navController.navigate("scanner") }
+                                    )
+                                    1 -> ProjectsScreen(
+                                        viewModel = viewModel,
+                                        onNavigateToProjectDetail = { id -> navController.navigate("project_detail/$id") },
+                                        onNavigateToAddProject = { navController.navigate("add_project") }
+                                    )
+                                    2 -> IdeasScreen(
+                                        viewModel = viewModel,
+                                        onNavigateToAddProject = { navController.navigate("add_project") }
+                                    )
                                 }
                             }
                         }

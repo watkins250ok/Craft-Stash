@@ -62,6 +62,7 @@ fun SupplyDetailScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             TopAppBar(
                 title = { Text(item.supply.name, maxLines = 1) },

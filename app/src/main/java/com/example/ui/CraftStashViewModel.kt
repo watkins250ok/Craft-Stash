@@ -4,6 +4,9 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.example.data.dao.ProjectWithDetails
 import com.example.data.dao.SupplyWithBatches
 import com.example.data.database.AppDatabase
@@ -28,10 +31,15 @@ data class StashFilterState(
     val selectedCraftType: String? = null,
     val selectedLocationId: String? = null,
     val selectedColorFamily: String? = null,
+    val selectedColor: String? = null,
+    val selectedMaterial: String? = null,
+    val selectedDimension: String? = null,
+    val selectedTag: String? = null,
     val favoritesOnly: Boolean = false,
     val availableOnly: Boolean = false,
     val sortOrder: SortOrder = SortOrder.UPDATED_DESC,
-    val viewMode: StashViewMode = StashViewMode.GRID
+    val viewMode: StashViewMode = StashViewMode.GRID,
+    val gridColumns: Int = 2
 )
 
 class CraftStashViewModel(application: Application) : AndroidViewModel(application) {
@@ -76,6 +84,26 @@ class CraftStashViewModel(application: Application) : AndroidViewModel(applicati
     private val _selectedTab = MutableStateFlow(0)
     val selectedTab: StateFlow<Int> = _selectedTab.asStateFlow()
 
+    // Pending project creation from gallery
+    var pendingProjectTitle by mutableStateOf("")
+    var pendingProjectCoverPhoto by mutableStateOf<String?>(null)
+    var pendingProjectNotes by mutableStateOf("")
+
+    fun prepareProjectFromGallery(item: InspirationGalleryItemEntity) {
+        pendingProjectTitle = item.notes.takeIf { it.isNotBlank() } ?: "Inspiration Project"
+        pendingProjectCoverPhoto = item.photoUri
+        pendingProjectNotes = buildString {
+            if (item.sourceUrl.isNotBlank()) append("Source: ${item.sourceUrl}\n")
+            if (item.notes.isNotBlank()) append(item.notes)
+        }
+    }
+
+    fun clearPendingProject() {
+        pendingProjectTitle = ""
+        pendingProjectCoverPhoto = null
+        pendingProjectNotes = ""
+    }
+
     // Draft Inbox Supplies
     val drafts: StateFlow<List<SupplyWithBatches>> = repository.draftSuppliesFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -98,6 +126,10 @@ class CraftStashViewModel(application: Application) : AndroidViewModel(applicati
 
     // Inspiration Sources Directory
     val inspirationSources: StateFlow<List<InspirationSourceEntity>> = repository.inspirationSourcesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Inspiration Gallery Items
+    val inspirationGalleryItems: StateFlow<List<InspirationGalleryItemEntity>> = repository.inspirationGalleryFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Filtered Supplies Flow
@@ -139,9 +171,34 @@ class CraftStashViewModel(application: Application) : AndroidViewModel(applicati
             }
         }
 
-        // Color Family filter
-        if (!filters.selectedColorFamily.isNullOrBlank()) {
-            list = list.filter { it.supply.colorFamilies.contains(filters.selectedColorFamily, ignoreCase = true) }
+        // Color filter
+        if (!filters.selectedColor.isNullOrBlank()) {
+            val c = filters.selectedColor.trim().lowercase()
+            list = list.filter { it.supply.manufacturerColor.lowercase().contains(c) || it.supply.colorFamilies.lowercase().contains(c) }
+        }
+
+        // Material filter
+        if (!filters.selectedMaterial.isNullOrBlank()) {
+            val m = filters.selectedMaterial.trim().lowercase()
+            list = list.filter { it.supply.material.lowercase().contains(m) }
+        }
+
+        // Dimension filter
+        if (!filters.selectedDimension.isNullOrBlank()) {
+            val d = filters.selectedDimension.trim().lowercase()
+            list = list.filter { item ->
+                item.batches.any { b ->
+                    b.dimensionLength?.toString()?.lowercase()?.contains(d) == true ||
+                    b.dimensionWidth?.toString()?.lowercase()?.contains(d) == true ||
+                    b.notes.lowercase().contains(d)
+                } || item.supply.notes.lowercase().contains(d)
+            }
+        }
+
+        // Tag filter
+        if (!filters.selectedTag.isNullOrBlank()) {
+            val t = filters.selectedTag.trim().lowercase()
+            list = list.filter { it.supply.tags.lowercase().contains(t) }
         }
 
         // Favorites only
@@ -216,6 +273,22 @@ class CraftStashViewModel(application: Application) : AndroidViewModel(applicati
         _filterState.update { it.copy(selectedLocationId = locId) }
     }
 
+    fun setColorFilter(color: String?) {
+        _filterState.update { it.copy(selectedColor = color) }
+    }
+
+    fun setMaterialFilter(material: String?) {
+        _filterState.update { it.copy(selectedMaterial = material) }
+    }
+
+    fun setDimensionFilter(dimension: String?) {
+        _filterState.update { it.copy(selectedDimension = dimension) }
+    }
+
+    fun setTagFilter(tag: String?) {
+        _filterState.update { it.copy(selectedTag = tag) }
+    }
+
     fun toggleFavoritesFilter() {
         _filterState.update { it.copy(favoritesOnly = !it.favoritesOnly) }
     }
@@ -230,6 +303,10 @@ class CraftStashViewModel(application: Application) : AndroidViewModel(applicati
 
     fun setViewMode(mode: StashViewMode) {
         _filterState.update { it.copy(viewMode = mode) }
+    }
+
+    fun setGridColumns(columns: Int) {
+        _filterState.update { it.copy(gridColumns = columns) }
     }
 
     fun clearAllFilters() {
@@ -499,13 +576,13 @@ class CraftStashViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     // Inspiration sources
-    fun addInspirationSource(name: String, baseUrl: String, searchTemplate: String?, craftTags: String, description: String) {
+    fun addInspirationSource(name: String, baseUrl: String, craftTags: String, description: String) {
         viewModelScope.launch {
             val src = InspirationSourceEntity(
                 id = UUID.randomUUID().toString(),
                 name = name,
                 baseUrl = baseUrl,
-                searchTemplate = searchTemplate,
+                searchTemplate = null,
                 craftTags = craftTags,
                 description = description,
                 isEnabled = true,
@@ -513,6 +590,20 @@ class CraftStashViewModel(application: Application) : AndroidViewModel(applicati
             )
             repository.saveInspirationSource(src)
             _message.value = "Added destination \"$name\"."
+        }
+    }
+
+    fun updateInspirationSource(source: InspirationSourceEntity) {
+        viewModelScope.launch {
+            repository.updateInspirationSource(source)
+            _message.value = "Updated destination \"${source.name}\"."
+        }
+    }
+
+    fun deleteInspirationSource(source: InspirationSourceEntity) {
+        viewModelScope.launch {
+            repository.deleteInspirationSource(source)
+            _message.value = "Deleted destination \"${source.name}\"."
         }
     }
 
@@ -526,6 +617,28 @@ class CraftStashViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             repository.restoreDefaultInspirationSources()
             _message.value = "Default inspiration sources restored."
+        }
+    }
+
+    // Inspiration Gallery Items
+    fun addGalleryItem(photoUri: String, sourceUrl: String, notes: String, tags: List<String>) {
+        viewModelScope.launch {
+            val item = InspirationGalleryItemEntity(
+                id = UUID.randomUUID().toString(),
+                photoUri = photoUri,
+                sourceUrl = sourceUrl,
+                notes = notes,
+                tags = tags.joinToString(",")
+            )
+            repository.saveGalleryItem(item)
+            _message.value = "Added to Inspiration Gallery!"
+        }
+    }
+
+    fun deleteGalleryItem(item: InspirationGalleryItemEntity) {
+        viewModelScope.launch {
+            repository.deleteGalleryItem(item)
+            _message.value = "Gallery item deleted."
         }
     }
 

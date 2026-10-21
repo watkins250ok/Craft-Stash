@@ -3,7 +3,6 @@ package com.example.ui.projects
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -12,7 +11,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,20 +36,26 @@ fun ProjectsScreen(
     val allSupplies by viewModel.allSupplies.collectAsState()
     val allAllocations by viewModel.allAllocations.collectAsState()
 
-    var selectedStatusFilter by remember { mutableStateOf<ProjectStatus?>(null) }
-    var showArchived by remember { mutableStateOf(false) }
+    var selectedPhaseFilter by remember { mutableStateOf<ProjectStatus?>(null) }
+    var showArchivedOnly by remember { mutableStateOf(false) }
+    var phaseDropdownExpanded by remember { mutableStateOf(false) }
 
-    val filteredProjects = remember(projects, selectedStatusFilter, showArchived) {
+    val filteredProjects = remember(projects, selectedPhaseFilter, showArchivedOnly) {
         projects.filter { p ->
-            if (!showArchived && p.project.status == ProjectStatus.ARCHIVED) return@filter false
-            if (selectedStatusFilter != null) {
-                p.project.status == selectedStatusFilter
-            } else true
+            if (showArchivedOnly) {
+                p.project.status == ProjectStatus.ARCHIVED
+            } else {
+                if (p.project.status == ProjectStatus.ARCHIVED) return@filter false
+                if (selectedPhaseFilter != null) {
+                    p.project.status == selectedPhaseFilter
+                } else true
+            }
         }
     }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             TopAppBar(
                 title = {
@@ -61,17 +65,7 @@ fun ProjectsScreen(
                         fontWeight = FontWeight.Bold
                     )
                 },
-                actions = {
-                    FilterChip(
-                        selected = showArchived,
-                        onClick = { showArchived = !showArchived },
-                        label = { Text("Archived") },
-                        leadingIcon = if (showArchived) {
-                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
-                        } else null,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                }
+                actions = {}
             )
         },
         floatingActionButton = {
@@ -90,28 +84,50 @@ fun ProjectsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Status filters row
-            LazyRow(
+            // Phase drop-down menu for filtering (no sideways scrolling)
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                item {
-                    FilterChip(
-                        selected = selectedStatusFilter == null,
-                        onClick = { selectedStatusFilter = null },
-                        label = { Text("All Active") }
+                ExposedDropdownMenuBox(
+                    expanded = phaseDropdownExpanded,
+                    onExpandedChange = { phaseDropdownExpanded = !phaseDropdownExpanded },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = if (showArchivedOnly) "Archived" else (selectedPhaseFilter?.displayName ?: "All Phases"),
+                        onValueChange = {},
+                        readOnly = true,
+                        label = {},
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = phaseDropdownExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor()
                     )
-                }
-                items(ProjectStatus.values().filter { it != ProjectStatus.ARCHIVED }) { status ->
-                    FilterChip(
-                        selected = selectedStatusFilter == status,
-                        onClick = {
-                            selectedStatusFilter = if (selectedStatusFilter == status) null else status
-                        },
-                        label = { Text(status.displayName) }
-                    )
+                    ExposedDropdownMenu(
+                        expanded = phaseDropdownExpanded,
+                        onDismissRequest = { phaseDropdownExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("All Phases") },
+                            onClick = {
+                                selectedPhaseFilter = null
+                                showArchivedOnly = false
+                                phaseDropdownExpanded = false
+                            }
+                        )
+                        ProjectStatus.values().forEach { phase ->
+                            DropdownMenuItem(
+                                text = { Text(phase.displayName) },
+                                onClick = {
+                                    selectedPhaseFilter = phase
+                                    showArchivedOnly = (phase == ProjectStatus.ARCHIVED)
+                                    phaseDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
                 }
             }
 

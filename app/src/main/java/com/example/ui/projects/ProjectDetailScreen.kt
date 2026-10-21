@@ -77,6 +77,7 @@ fun ProjectDetailScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             TopAppBar(
                 title = { Text(project.title, maxLines = 1) },
@@ -155,7 +156,7 @@ fun ProjectDetailScreen(
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(project.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
-                        // Status dropdown
+                        // Phase dropdown
                         var statusExpanded by remember { mutableStateOf(false) }
                         Box {
                             AssistChip(

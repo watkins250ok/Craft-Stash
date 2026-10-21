@@ -32,7 +32,7 @@ enum class CoverageState(val displayName: String) {
 enum class StashViewMode {
     GRID,
     CARDS,
-    COMPACT_LIST
+    MINIMAL
 }
 
 enum class SortOrder(val displayName: String) {
